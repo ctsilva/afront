@@ -1,0 +1,20 @@
+GNU GENERAL PUBLIC LICENSE
+
+Afront - Advancing Front Triangulation
+
+The prototype implementation of Afront has been made available under the
+GNU General Public License (GPL).
+
+For the full text of the GPL license, see:
+https://www.gnu.org/licenses/gpl-3.0.en.html
+
+Copyright (c) 2005-2007 University of Utah
+Visualization and Geometric Computing Group
+
+Developed by:
+- John Schreiner
+- Carlos E. Scheidegger
+- Claudio T. Silva
+
+Note: The included libraries (gtb/, lib/) may have different licenses.
+Please refer to those directories for their specific licensing terms.

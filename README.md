@@ -676,7 +676,9 @@ This work was partially supported by:
 
 ## License
 
-Open Source (see source files for specific license terms)
+This software is released under the **GNU General Public License (GPL)**.
+
+See individual source files for specific license headers and copyright information.
 
 ---
 
