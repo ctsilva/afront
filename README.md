@@ -639,6 +639,15 @@ Please cite the relevant papers when using our algorithm or code in your researc
 }
 ```
 
+### PhD Thesis
+
+**Surface Modeling Using Curvature-Adaptive Advancing Front Triangulation**
+- John Schreiner
+- University of Utah, 2007
+- [Full thesis PDF](https://www.sci.utah.edu/~csilva/papers/thesis/john-schreiner-thesis.pdf)
+
+This thesis provides comprehensive coverage of the advancing front triangulation algorithm, including detailed explanations of the guidance field, front propagation, and applications to various meshing scenarios.
+
 ---
 
 ## People
