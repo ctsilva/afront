@@ -4,7 +4,7 @@
 
 ## Project History
 
-Afront was developed in the mid-2000s and published at Eurographics and TVCG (see details below for the full papers). At some point the code was released on SourceForge, but it disappeared. With the help of Claude, we have compiled it on macOS, and we plan to get it working on Linux and Windows. The code uses lots of legacy things, including ancient OpenGL, GLUT, etc.
+Afront was developed in the mid-2000s and published at Eurographics and TVCG (see details below for the full papers). At some point the code was released on SourceForge. This version was resurrected directly from a copy of the internal CVS repository. With the help of Claude, we have compiled it on macOS, and we plan to get it working on Linux and Windows. The code uses lots of legacy things, including ancient OpenGL, GLUT, etc.
 
 ## Build Status
 
@@ -598,43 +598,48 @@ Please cite the relevant papers when using our algorithm or code in your researc
 
 ### Primary Papers
 
-**High-Quality Extraction of Isosurfaces from Regular and Irregular Grids**
-- J. Schreiner, C. Scheidegger, C. Silva
-- IEEE Transactions on Visualization and Computer Graphics (Proceedings of IEEE Visualization), 2006
-
-```bibtex
-@article{schreiner2006isosurfaces,
-  title={High-Quality Extraction of Isosurfaces from Regular and Irregular Grids},
-  author={Schreiner, John and Scheidegger, Carlos and Silva, Claudio T.},
-  journal={IEEE Transactions on Visualization and Computer Graphics},
-  year={2006},
-  publisher={IEEE}
-}
-```
-
 **Direct (Re)Meshing for Efficient Surface Processing**
-- J. Schreiner, C. Scheidegger, S. Fleishman, C. Silva
-- Computer Graphics Forum (Proceedings of Eurographics), 2006
+- John M. Schreiner, Carlos Eduardo Scheidegger, Shachar Fleishman, Cláudio T. Silva
+- Computer Graphics Forum 25(3): 527-536 (2006)
 
 ```bibtex
 @article{schreiner2006remeshing,
   title={Direct (Re)Meshing for Efficient Surface Processing},
-  author={Schreiner, John and Scheidegger, Carlos and Fleishman, Shachar and Silva, Claudio T.},
+  author={Schreiner, John M. and Scheidegger, Carlos Eduardo and Fleishman, Shachar and Silva, Cl{\'a}udio T.},
   journal={Computer Graphics Forum},
-  year={2006},
-  organization={Wiley Online Library}
+  volume={25},
+  number={3},
+  pages={527--536},
+  year={2006}
 }
 ```
 
-**Triangulating Point-Set Surfaces With Bounded Error**
-- C. Scheidegger, S. Fleishman, C. Silva
-- Proceedings of the third Eurographics/ACM Symposium on Geometry Processing, 2005
+**High-Quality Extraction of Isosurfaces from Regular and Irregular Grids**
+- John M. Schreiner, Carlos Eduardo Scheidegger, Cláudio T. Silva
+- IEEE Transactions on Visualization and Computer Graphics 12(5): 1205-1212 (2006)
+
+```bibtex
+@article{schreiner2006isosurfaces,
+  title={High-Quality Extraction of Isosurfaces from Regular and Irregular Grids},
+  author={Schreiner, John M. and Scheidegger, Carlos Eduardo and Silva, Cl{\'a}udio T.},
+  journal={IEEE Transactions on Visualization and Computer Graphics},
+  volume={12},
+  number={5},
+  pages={1205--1212},
+  year={2006}
+}
+```
+
+**Triangulating Point Set Surfaces with Bounded Error**
+- Carlos Eduardo Scheidegger, Shachar Fleishman, Cláudio T. Silva
+- Symposium on Geometry Processing 2005: 63-72
 
 ```bibtex
 @inproceedings{scheidegger2005triangulating,
-  title={Triangulating Point-Set Surfaces With Bounded Error},
-  author={Scheidegger, Carlos and Fleishman, Shachar and Silva, Claudio T.},
-  booktitle={Proceedings of the third Eurographics/ACM Symposium on Geometry Processing},
+  title={Triangulating Point Set Surfaces with Bounded Error},
+  author={Scheidegger, Carlos Eduardo and Fleishman, Shachar and Silva, Cl{\'a}udio T.},
+  booktitle={Symposium on Geometry Processing},
+  pages={63--72},
   year={2005}
 }
 ```
@@ -642,8 +647,8 @@ Please cite the relevant papers when using our algorithm or code in your researc
 ### PhD Thesis
 
 **Surface Modeling Using Curvature-Adaptive Advancing Front Triangulation**
-- John Schreiner
-- University of Utah, 2007
+- John M. Schreiner
+- University of Utah, 2009
 - [Full thesis PDF](https://www.sci.utah.edu/~csilva/papers/thesis/john-schreiner-thesis.pdf)
 
 This thesis provides comprehensive coverage of the advancing front triangulation algorithm, including detailed explanations of the guidance field, front propagation, and applications to various meshing scenarios.

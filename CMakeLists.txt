@@ -16,7 +16,7 @@ if(APPLE)
     link_directories(/opt/homebrew/lib)
 endif()
 
-INCLUDE_DIRECTORIES(. ./lib)
+INCLUDE_DIRECTORIES(. ./src ./lib)
 
 # Add subdirectories with explicit binary directories
 ADD_SUBDIRECTORY(gtb ${CMAKE_CURRENT_BINARY_DIR}/gtb)
@@ -28,12 +28,12 @@ ADD_SUBDIRECTORY(lib/ThreadLib ${CMAKE_CURRENT_BINARY_DIR}/ThreadLib)
 LINK_DIRECTORIES(gtb lib/mlslib lib/rmlslib lib/viewer lib/ThreadLib)
 
 ADD_EXECUTABLE(afront
-	crease.cpp      main.cpp                   output_controller_reeb.cpp  triangulate_mesh.cpp
-	front.cpp       MarchingCubes.cpp          rg.cpp
-	generaldef.cpp  output_controller_gui.cpp  triangulate_csg.cpp         triangulate_mls.cpp
-	guidance.cpp    output_controller_hhm.cpp  triangulate_tet.cpp
-	lsqr.cpp        output_controller_obj.cpp  triangulate_iso.cpp         triangulator.cpp
-	edgeflipper.cpp FLF_io.cpp                 PC_io.cpp)
+	src/crease.cpp      src/main.cpp                   src/output_controller_reeb.cpp  src/triangulate_mesh.cpp
+	src/front.cpp       src/MarchingCubes.cpp          src/rg.cpp
+	src/generaldef.cpp  src/output_controller_gui.cpp  src/triangulate_csg.cpp         src/triangulate_mls.cpp
+	src/guidance.cpp    src/output_controller_hhm.cpp  src/triangulate_tet.cpp
+	src/lsqr.cpp        src/output_controller_obj.cpp  src/triangulate_iso.cpp         src/triangulator.cpp
+	src/edgeflipper.cpp src/FLF_io.cpp                 src/PC_io.cpp)
 
 # Find GLUT and OpenGL
 find_package(GLUT)
@@ -51,7 +51,7 @@ else()
 endif()
 
 # Ultra-simple GLUT test program - just tests window creation
-ADD_EXECUTABLE(test_glut_simple test_glut_simple.cpp)
+ADD_EXECUTABLE(test_glut_simple src/test_glut_simple.cpp)
 
 if(GLUT_FOUND AND OPENGL_FOUND)
     TARGET_LINK_LIBRARIES(test_glut_simple viewer ThreadLib gtb
