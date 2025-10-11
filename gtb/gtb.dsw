@@ -1,0 +1,764 @@
+Microsoft Developer Studio Workspace File, Format Version 6.00
+# WARNING: DO NOT EDIT OR DELETE THIS WORKSPACE FILE!
+
+###############################################################################
+
+Project: "camcalib"=..\PROGRAMS\camcalib\camcalib.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name gtb
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "consistentorientation"=..\programs\mlstexture\consistentorientation.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name gtb
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name mlslib
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "copyorientation"=..\programs\mlstexture\copyorientation.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name gtb
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name mlslib
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "flattest"=..\programs\tests\flattest.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name gtb
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name mlslib
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "gtb"=.\gtb.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+}}}
+
+###############################################################################
+
+Project: "hierarchy2color"=..\programs\mlscompress\hierarchy2color.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name gtb
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name mlslib
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "ico"=..\PROGRAMS\ico\ico.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name gtb
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "imagelib"=..\imagelib\imagelib.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+}}}
+
+###############################################################################
+
+Project: "img2off"=..\programs\tools\img2off.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name gtb
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "kdtest"=..\programs\tools\kdtest.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name gtb
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name mlslib
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "mexicanhat"=..\programs\datagen\mexicanhat.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name gtb
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "mlsaddpoints"=..\programs\mlsaddpoints\mlsaddpoints.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name gtb
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name mlslib
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "mlscompress"=..\programs\mlscompress\mlscompress.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name gtb
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name mlslib
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "mlsdebug"=..\programs\mlsdebug\mlsdebug.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name gtb
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name mlslib
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "mlsdebugSharp"=..\programs\mlsDebugSharp\mlsdebugSharp.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name gtb
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name mlslib
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "mlsdecode"=..\programs\mlscompress\mlsdecode.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name gtb
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name mlslib
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "mlslib"=..\mls\mlslib.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+}}}
+
+###############################################################################
+
+Project: "mlspatchify"=..\programs\mlspatchify\mlspatchify.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name gtb
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name mlslib
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "mlspre"=..\programs\mlstexture\mlspre.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name gtb
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name mlslib
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "mlssmooth"=..\programs\mlssmooth\mlssmooth.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name gtb
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name mlslib
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "mlstexture"=..\programs\mlstexture\mlstexture.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name gtb
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name mlslib
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "obj2bin"=..\programs\mlscompress\obj2bin.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name gtb
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "objdiff"=..\programs\DataGen\objdiff.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name gtb
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "octadd"=..\programs\octadd\octadd.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name gtb
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "octgen"=..\PROGRAMS\octgen\octgen.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name gtb
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "octview"=..\PROGRAMS\OCTVIEW\octview.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name gtb
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "off2obj"=..\programs\rtpitools\off2obj.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name gtb
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "offsubdiv"=..\programs\offsubdiv\offsubdiv.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name gtb
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "offview"=..\programs\offview\offview.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name gtb
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "plpview"=..\programs\plpview\plpview.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name gtb
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "ply2off"=..\programs\ply2off\ply2off.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name gtb
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "pointsdistribution"=..\programs\pointsdistribution\pointsdistribution.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name gtb
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "prepulse"=..\PROGRAMS\prepulse\prepulse.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name gtb
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name mlslib
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "psetcompress"=..\programs\psetcompress\psetcompress.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name gtb
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name mlslib
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "quantizehierarchy"=..\programs\mlscompress\quantizehierarchy.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name gtb
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name mlslib
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "rangecalib"=..\programs\rtpitools\rangecalib.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name gtb
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name mlslib
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "removeduplicate"=..\programs\rtpitools\removeduplicate.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name gtb
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name mlslib
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "rtpi2obj"=..\programs\rtpitools\rtpi2obj.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name gtb
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "rtpicorrect"=..\programs\rtpitools\rtpicorrect.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name gtb
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name mlslib
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "rtpicut"=..\programs\rtpitools\rtpicut.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name gtb
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "rtpiequalize"=..\programs\rtpitools\rtpiequalize.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name gtb
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "rtpihistogram"=..\programs\rtpitools\rtpihistogram.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name gtb
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "rtpiregister"=..\programs\rtpitools\rtpiregister.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name gtb
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "simplify"=..\programs\simplify\simplify.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name gtb
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "unquantizehierarchy"=..\programs\mlscompress\unquantizehierarchy.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name gtb
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name mlslib
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "wei2000"=..\programs\wei2000\wei2000.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name gtb
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name imagelib
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Global:
+
+Package=<5>
+{{{
+}}}
+
+Package=<3>
+{{{
+}}}
+
+###############################################################################
+

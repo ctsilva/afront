@@ -1,0 +1,13 @@
+
+
+
+
+AC_ARG_WITH(real-is-double, [  --with-real-is-double          define REAL_IS_DOUBLE])
+if test "$with_real_is_double" == "yes"; then
+   AC_DEFINE([REAL_IS_DOUBLE])
+else
+   AC_DEFINE([REAL_IS_FLOAT])
+fi
+
+AC_DEFINE([NO_EXCEPTIONS])
+AC_DEFINE([USENR])

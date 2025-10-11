@@ -1,0 +1,84 @@
+# Build directories
+build/
+*/build/
+**/build/
+
+# Build artifacts
+*.o
+*.a
+*.so
+*.dylib
+*.dll
+*.lib
+*.exe
+afront
+test_glut
+test_glut_simple
+
+# Generated mesh files (keep examples in data/)
+*.m
+!data/*.m
+!data/**/*.m
+*.off
+!data/*.off
+!data/**/*.off
+*.ply
+!data/*.ply
+!data/**/*.ply
+*.obj
+!data/*.obj
+!data/**/*.obj
+*.pc
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.claude/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# CMake generated files
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+*.cmake
+!CMakeLists.txt
+!**/CMakeLists.txt
+install_manifest.txt
+
+# Logs and status files
+*.log
+BUILD_STATUS.md
+BUILD_SUCCESS.md
+final_build.log
+
+# Temporary files
+view.txt
+outmesh.m
+test_batch.m
+bunny_remeshed.off
+*_remeshed.*
+*_output.*
+
+# Legacy CVS
+CVS/
+.cvsignore
+
+# Legacy build systems (Visual Studio, etc.)
+*.ncb
+*.suo
+*.sln.docstates
+*.user
+*.filters
+*.opt
+*.plg
+Debug/
+Release/
