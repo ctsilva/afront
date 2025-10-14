@@ -80,5 +80,9 @@ CVS/
 *.filters
 *.opt
 *.plg
-Debug/
-Release/
+/Debug/
+/Release/
+**/Debug/
+**/Release/
+# But allow gtb/debug source directory
+!gtb/debug/

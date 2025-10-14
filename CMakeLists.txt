@@ -39,6 +39,14 @@ ADD_EXECUTABLE(afront
 find_package(GLUT)
 find_package(OpenGL)
 
+# Add GLUT include directories
+if(GLUT_FOUND)
+    include_directories(${GLUT_INCLUDE_DIR})
+endif()
+if(OPENGL_FOUND)
+    include_directories(${OPENGL_INCLUDE_DIR})
+endif()
+
 # Link libraries
 if(GLUT_FOUND AND OPENGL_FOUND)
     TARGET_LINK_LIBRARIES(afront viewer ThreadLib gtb mlslib rmlslib
