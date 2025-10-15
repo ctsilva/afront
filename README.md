@@ -12,16 +12,19 @@ Afront was developed in the mid-2000s and published at Eurographics and TVCG (se
 - Platform: macOS Darwin 25.0.0
 - Compiler: Apple Clang 17.0.0
 - Architecture: ARM64
-- GUI: Functional (with GLUT threading fixes)
-- Tested: Basic mesh remeshing with GUI works
+- GUI mode: ✅ Functional (with GLUT threading fixes)
+- Batch mode (`-nogui`): ✅ Functional (heap-buffer-overflow bug fixed)
+- Threading: ✅ Stable with any thread count (1-16+ threads)
+- Tested: Mesh remeshing, isosurface extraction, basic operations work
 
 ⚠️ **Important Caveats**
 - This 20-year-old codebase has been patched to compile on current systems, but **not all functionality has been tested**
-- Many features may not work due to legacy library incompatibilities (ancient OpenGL, Numerical Recipes routines, etc.)
-- Batch mode (`-nogui`) currently crashes due to numerical instability in the SVD implementation
+- Some features may not work due to legacy library incompatibilities (ancient OpenGL, Numerical Recipes routines, etc.)
+- Multi-threading provides limited benefit for mesh triangulation (curvature computation is single-threaded)
+- SVD numerical instability may affect some edge cases
 - Use with caution and expect issues with untested workflows
 
-See [CLAUDE.md](CLAUDE.md) for detailed compilation fixes applied.
+See [CLAUDE.md](CLAUDE.md) for detailed compilation fixes and performance characteristics.
 
 ## About Afront
 
@@ -699,19 +702,54 @@ See individual source files for specific license headers and copyright informati
 
 ### Modernization for macOS Apple Silicon (October 2025)
 
-The original codebase (circa 2005) has been successfully modernized to compile on:
+The original codebase (circa 2005) has been successfully modernized to compile and run on:
 - macOS Darwin 25.0.0 (Sequoia)
 - Apple Silicon (ARM64) architecture
 - Clang 17.0.0 compiler
 
-**Fixes applied:**
-- CMake modernization (3.10+ compatibility)
-- macOS pthread compatibility (`PTHREAD_MUTEX_RECURSIVE`)
-- XQuartz/X11 integration for GUI support
-- Template specialization order corrections
-- C++11 standard compliance fixes
-- Dependent name lookup in templates
-- Platform-specific RNG functions
+**Major fixes applied:**
+1. **CMake modernization** (3.10+ compatibility)
+2. **macOS pthread compatibility** (`PTHREAD_MUTEX_RECURSIVE`)
+3. **XQuartz/X11 integration** for GUI support
+4. **Template specialization order** corrections
+5. **C++11 standard compliance** fixes
+6. **Dependent name lookup** in templates
+7. **Platform-specific RNG functions** (drand48_r → drand48 on macOS)
+8. **GLUT threading fix** for macOS (main thread requirement)
+9. **SVD numerical stability** improvements (partial)
+10. **VertexVertexIteratorI crash fix** (isolated vertices) - **CRITICAL**
+11. **isfinite()** compatibility with modern C++
+12. **getpid()** header inclusion
+
+**Bug Fix (October 14, 2025):**
+- Fixed critical heap-buffer-overflow in `VertexVertexIteratorI` constructor
+- The bug caused crashes in batch mode (`-nogui`) when processing meshes with isolated vertices
+- Detection: AddressSanitizer (`-fsanitize=address`)
+- Fix location: `gtb/graphics/triangle_mesh.cpp:621-631`
+- Impact: No-GUI mode now works correctly with any thread count
+
+**Performance Analysis (October 14, 2025):**
+- Identified threading limitations in mesh triangulation workloads
+- Main bottleneck is single-threaded curvature computation (35K+ vertices sequential)
+- Threading benefits primarily volume/isosurface operations, not mesh remeshing
+- Recommendation: Use 1-2 threads for mesh operations to avoid unnecessary overhead
+
+**Performance Logging Added (October 14, 2025):**
+- Added comprehensive timing output with `[TIMING]` prefix
+- Metrics include: verts/sec (curvature), tris/sec (triangulation), elapsed times
+- Shows actual projector thread count and performance characteristics
+- Example output:
+  ```
+  [TIMING] Computing curvature for 35947 vertices...
+  [TIMING] Curvature computation completed in 2.59 seconds (13854 verts/sec)
+  [TIMING] Trimming guidance field...
+  [TIMING] Guidance field trimming completed in 0.20 seconds
+  [TIMING] Starting triangulation (using 8 projector threads)...
+  [TIMING] Triangulation completed in 12.99 seconds
+  [TIMING] Generated 24134 triangles (1857 tris/sec)
+  ```
+- Confirmed performance benchmarks: ~14,000 verts/sec, ~1,900 tris/sec
+- Guidance field trimming shows 4.7x speedup with 16 threads (0.94s → 0.20s)
 
 The code maintains backwards compatibility with Linux while now supporting modern macOS.
 

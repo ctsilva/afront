@@ -2,11 +2,19 @@
 #include "front.h"
 #include "guidance.h"
 #include "triangulator.h"
+#include <sys/time.h>
 
 // set this to 0 if you want projections to happen immediately instead of in a different thread
 // WARNING: this will only work for projectors that don't have any state!
 extern int idealNumThreads;
 #define TRIANGULATOR_NUM_PROJECTORS (idealNumThreads/2) //(std::max(1,idealNumThreads-1))
+
+// Timing utility
+static double get_time_seconds() {
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    return tv.tv_sec + tv.tv_usec / 1000000.0;
+}
 
 
 //static real_type edge_split_ratio = 1.2;unused
@@ -1281,6 +1289,11 @@ void Triangulator::Go
 
     vector< vector<int> > failsafe_holes;
 
+    double triangulation_start = get_time_seconds();
+    int triangles_at_start = 0;
+    int num_projector_threads = work_threads.size();
+    cerr << "[TIMING] Starting triangulation (using " << num_projector_threads << " projector threads)..." << endl;
+
     while (!heap.empty()) {
 	feli top = heap.top();
 
@@ -1441,6 +1454,14 @@ void Triangulator::Go
     }
 
     fprintf(stderr, "\n");
+
+    double triangulation_elapsed = get_time_seconds() - triangulation_start;
+    int triangles_generated = numFacesAdded - triangles_at_start;
+
+    cerr << "[TIMING] Triangulation completed in " << triangulation_elapsed << " seconds" << endl;
+    cerr << "[TIMING] Generated " << triangles_generated << " triangles ("
+         << (triangles_generated / triangulation_elapsed) << " tris/sec)" << endl;
+
     StopWorkerThreads();
 }
 
@@ -1536,7 +1557,8 @@ Triangulator::Triangulator(TriangulatorController &c)
 }
 
 void Triangulator::StartWorkerThreads() {
-    for (int i=0; i<TRIANGULATOR_NUM_PROJECTORS; i++) {
+    int num_proj = TRIANGULATOR_NUM_PROJECTORS;
+    for (int i=0; i<num_proj; i++) {
 	work_threads.push_back(new thlib::Thread(ProjectorThreadMain, this, 0));
     }
 }

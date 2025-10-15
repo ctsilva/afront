@@ -4,9 +4,17 @@
 #include "triangulator.h"
 #include "triangulate_mesh.h"
 #include "parallel.h"
+#include <sys/time.h>
 
 
 //#define CLOSEST_POINT_PROJECTION
+
+// Timing utility
+static double get_time_seconds() {
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    return tv.tv_sec + tv.tv_usec / 1000000.0;
+}
 
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -694,6 +702,8 @@ MeshGuidanceField::MeshGuidanceField(int curv_sub, const TriangleMesh &mesh, rea
 	cmesh.LoopSubdivide();
     }
 
+    double curvature_start = get_time_seconds();
+    cerr << "[TIMING] Computing curvature for " << mesh.verts.size() << " vertices..." << endl;
 
     for (unsigned v=0; v<mesh.verts.size(); v++) {
 
@@ -777,6 +787,9 @@ MeshGuidanceField::MeshGuidanceField(int curv_sub, const TriangleMesh &mesh, rea
     }
     cerr << std::endl;
 
+    double curvature_elapsed = get_time_seconds() - curvature_start;
+    cerr << "[TIMING] Curvature computation completed in " << curvature_elapsed << " seconds ("
+         << (mesh.verts.size() / curvature_elapsed) << " verts/sec)" << endl;
 
     vector<int> marked; // for removal
     Trim(marked);

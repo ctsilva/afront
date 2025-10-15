@@ -225,7 +225,7 @@ void extract_boundary_loops(const TriangleMesh &m, vector< vector<int> > &loops)
     loops.resize(0);
 
     vector<bool> needadd(m.verts.size());
-    for (unsigned i=0; i<needadd.size(); i++) 
+    for (unsigned i=0; i<needadd.size(); i++)
 	needadd[i] = false;
 
     for (unsigned v=0; v<m.verts.size(); v++) {
@@ -359,7 +359,8 @@ int do_tri_mesh(int argc, char* argv[]) {
     if (guidance)		delete guidance;		guidance=NULL;
     if (controller)		delete controller;		controller=NULL;
 
-    const TriangleMesh &mesh = *cmeshes[0];
+    // Use meshes[0] directly instead of const pointer to avoid any aliasing issues
+    TriangleMesh &mesh = meshes[0];
     MeshProjector projector(mesh);
     guidance = new MeshGuidanceField(csubdiv, mesh, rho, min_step, max_step, reduction);
     OutputController::AddControllerToBack(output_controller_head, new OutputControllerHHM(outname));
@@ -376,7 +377,7 @@ int do_tri_mesh(int argc, char* argv[]) {
     vector< int > corner_triangles;
 
 #if 1  // this kills pensatore for some reason
-    
+
     if (boundary_dist != 0) {
 	projector.FindSoupBoundaries(boundaries, boundary_dist);
     } else {

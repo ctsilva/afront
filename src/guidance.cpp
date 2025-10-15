@@ -8,6 +8,14 @@
 #include <iterator>
 #include <algorithm>
 #include <numeric>
+#include <sys/time.h>
+
+// Timing utility
+static double get_time_seconds() {
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    return tv.tv_sec + tv.tv_usec / 1000000.0;
+}
 
 // why aren't these dependent on the reduction factor?
 static const float cos_ear_cuttable_angle_max = cosf(M_PI * 100.0f / 180.0f);
@@ -290,10 +298,11 @@ void GuidanceField::Trim(vector<int> &marked) const {
     extern bool trim_guidance;
     if (!trim_guidance) {
 	cerr<<"Skipping trimming guidance field"<<endl;
-	return; 
+	return;
     }
 
-    cerr << "Trimming guidance field." << endl;
+    double trim_start = get_time_seconds();
+    cerr << "[TIMING] Trimming guidance field..." << endl;
 
 
     vector<int> ipts(NumPoints());
@@ -324,7 +333,9 @@ void GuidanceField::Trim(vector<int> &marked) const {
     cerr<<"Pass 2"<<endl;
     cerr<<"Num points kept: "<<nmarked<<endl;
     cerr<<"total points: "<<marked.size()<<endl;
-    
+
+    double trim_elapsed = get_time_seconds() - trim_start;
+    cerr << "[TIMING] Guidance field trimming completed in " << trim_elapsed << " seconds" << endl;
 
 }
 

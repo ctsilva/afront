@@ -620,9 +620,14 @@ typename tTriangleMesh<T>::VertexVertexIterator& tTriangleMesh<T>::VertexVertexI
 template<class T>
 tTriangleMesh<T>::VertexVertexIteratorI::VertexVertexIteratorI(const tTriangleMesh<T> &_mesh, int vi) : vfi(_mesh, vi) {
 	first = true;
-	int ff = *vfi;
-	int v = _mesh.faces[ff].VertIndex(vi);
-	onedge = (_mesh.faces[ff].nbrs[v] == -1);
+	onedge = false;
+	// BUG FIX: Check if vertex has any faces before dereferencing
+	// Isolated vertices (someface==-1) would cause *vfi to return -1, leading to out-of-bounds access
+	if (!vfi.done()) {
+		int ff = *vfi;
+		int v = _mesh.faces[ff].VertIndex(vi);
+		onedge = (_mesh.faces[ff].nbrs[v] == -1);
+	}
 }
 
 
