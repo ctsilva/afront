@@ -27,6 +27,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
 #ifndef _VIEWER_H
 #define _VIEWER_H
 
+#include <cstring>   // gcc/libstdc++ needs it explicitly
 #include <ThreadLib/threadslib.h>
 #include <vector>
 #include <iostream>

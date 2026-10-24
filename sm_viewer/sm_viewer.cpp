@@ -31,6 +31,7 @@
   
 ===============================================================================
 */
+#include <cstring>   // gcc/libstdc++ needs it explicitly
 #include <vector>
 #include <set>
 
