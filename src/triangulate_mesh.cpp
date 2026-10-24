@@ -31,6 +31,13 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
 #include "triangulator.h"
 #include "triangulate_mesh.h"
 
+#include <sys/time.h>
+static double get_time_seconds() {   // [TIMING] helper (2025 revival)
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    return tv.tv_sec + tv.tv_usec / 1000000.0;
+}
+
 
 //#define CLOSEST_POINT_PROJECTION
 
@@ -689,6 +696,9 @@ MeshGuidanceField::MeshGuidanceField(int curv_sub, const TriangleMesh &mesh, rea
     }
 
 
+    double curvature_start = get_time_seconds();
+    cerr << "[TIMING] Computing curvature for " << mesh.verts.size() << " vertices..." << endl;
+
     for (unsigned v=0; v<mesh.verts.size(); v++) {
 
 
@@ -784,7 +794,14 @@ MeshGuidanceField::MeshGuidanceField(int curv_sub, const TriangleMesh &mesh, rea
 
     vector<int> marked(ideal_length.size()); // for removal
     Trimmer<GetPointMesh> trimmer(*this, kdGetPoint, ideal_length);
+    double curvature_elapsed = get_time_seconds() - curvature_start;
+    fprintf(stderr, "[TIMING] Curvature computation completed in %.2f seconds (%.0f verts/sec)\n",
+            curvature_elapsed, mesh.verts.size() / curvature_elapsed);
+
+    double trim_start = get_time_seconds();
+    cerr << "[TIMING] Trimming guidance field..." << endl;
     trimmer.Trim(marked);
+    fprintf(stderr, "[TIMING] Guidance field trimming completed in %.2f seconds\n", get_time_seconds() - trim_start);
 
 
     // rebuild the kdtree

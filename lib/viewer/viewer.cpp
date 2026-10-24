@@ -25,6 +25,10 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
 
 
 
+#include <GL/glut.h>
+#ifndef GLUT_ACTIVE_SUPER
+#define GLUT_ACTIVE_SUPER 0x0008   // Command/Meta key; missing from older GLUT headers
+#endif
 #include <stdlib.h>
 #include <string.h>
 #include <vector>
@@ -45,15 +49,11 @@ void *Viewer::start_stub(void *arg)
 }
 
 
+// macOS requires glutInit, window creation and glutMainLoop to run on the
+// application's main thread (port of the 2025 fix to the 2007 tree, see CLAUDE.md).
+// Start() therefore initializes GLUT synchronously on the caller's thread and the
+// caller must run Go() on that same thread; the original spawned a thread here.
 void Viewer::Start() {
-	_thread = new thlib::Thread(start_stub, NULL, 0);
-	while (!glut_has_initialized); // Busywaiting, UGH
-}
-
-
-
-
-void Viewer::Go() {
     _critical_section.enter();
 
 	int argc=1;
@@ -69,8 +69,12 @@ void Viewer::Go() {
 	}
 	glut_has_initialized = true;
 	_critical_section.leave();
-	
+}
 
+
+
+
+void Viewer::Go() {
     glutMainLoop();	// never returns!
 }
 
@@ -993,11 +997,12 @@ void Viewer::gc_mouse(int button, int state, int x, int y) {
 			w.pan_depth = depth;
 //			std::cerr<<depth<<std::endl;
 			if (w.pan_depth==1) w.pan_depth=0.999;
-			if (glutGetModifiers() == GLUT_ACTIVE_SHIFT)
-				w.dollying = true;
-			else if (glutGetModifiers() == 0)
+			int modifiers = glutGetModifiers();
+			if (modifiers == GLUT_ACTIVE_SHIFT || modifiers == GLUT_ACTIVE_CTRL || modifiers == GLUT_ACTIVE_SUPER)
+				w.dollying = true;  // zoom: Shift, Ctrl, or Command (macOS)
+			else if (modifiers == 0)
 				w.tracking = true;
-			else if (glutGetModifiers()==GLUT_ACTIVE_CTRL || glutGetModifiers()==GLUT_ACTIVE_ALT)
+			else if (modifiers == GLUT_ACTIVE_ALT)
 				w.panning = true;
 		}
 

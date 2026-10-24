@@ -30,6 +30,13 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
 #include "guidance.h"
 #include "triangulator.h"
 
+#include <sys/time.h>
+static double get_time_seconds() {   // [TIMING] helper (2025 revival)
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    return tv.tv_sec + tv.tv_usec / 1000000.0;
+}
+
 // set this to 0 if you want projections to happen immediately instead of in a different thread
 extern int idealNumThreads;
 #define TRIANGULATOR_NUM_PROJECTORS (idealNumThreads/2) //(std::max(1,idealNumThreads-1))
@@ -2066,6 +2073,10 @@ void Triangulator::Go
     UpdateWorkingArea(fronts.back()->FirstElement());
 
     vector< vector<int> > failsafe_holes;
+
+    double triangulation_start = get_time_seconds();
+    int triangles_at_start = numFacesAdded;
+    cerr << "[TIMING] Starting triangulation (using " << work_threads.size() << " projector threads)..." << endl;
 	bool seen_failsafe = false;
 
     while (true) {
@@ -2292,6 +2303,12 @@ void Triangulator::Go
     }
 
     fprintf(stderr, "\n");
+
+    double triangulation_elapsed = get_time_seconds() - triangulation_start;
+    int triangles_generated = numFacesAdded - triangles_at_start;
+    fprintf(stderr, "[TIMING] Triangulation completed in %.2f seconds\n", triangulation_elapsed);
+    fprintf(stderr, "[TIMING] Generated %d triangles (%.0f tris/sec)\n", triangles_generated, triangles_generated / triangulation_elapsed);
+
     StopWorkerThreads();
 
     if (vertinfo.size() != available_vertinfo.size())

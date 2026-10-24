@@ -3252,6 +3252,19 @@ void fix_gcc_linking() {
 
 
 
+// GUI mode: the command line (and so the triangulation) runs in this worker thread
+// while the main thread owns GLUT (macOS requirement, see Viewer::Start()).
+static gtb::CommandLine *g_commandline = NULL;
+static int g_toskip = 0;
+static void *worker_thread_func(void *) {
+	g_commandline->Parse(g_toskip);
+	redrawAndWait('x', true);   // as before: press x in the gui to exit
+	if (gui) delete gui;
+	exit(0);
+	return NULL;
+}
+
+
 int main(int argc, char* argv[]) {
 
 
@@ -3408,12 +3421,16 @@ int main(int argc, char* argv[]) {
 
 	redrawAll();
 	if (gui) gui->ViewAll();
-	cl.Parse(toskip);
 
-	redrawAndWait('x', true);
-
-	if (gui)
-		delete gui;
+	if (gui) {
+		g_commandline = &cl;
+		g_toskip = toskip;
+		new thlib::Thread(worker_thread_func, NULL, 0);
+		gui->Go();   // glutMainLoop on the main thread; never returns
+	} else {
+		cl.Parse(toskip);
+		redrawAndWait('x', true);
+	}
 	return 0;
 }
 
