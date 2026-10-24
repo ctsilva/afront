@@ -48,6 +48,8 @@ bool reuse_seeds = false;
 // 2026: E4 ablation, one marching-squares cell per block-face cell instead of the certified
 // (interval-arithmetic, Plantinga-Vegter style) subdivision of the face curves
 bool no_isotopic_boundary = false;
+// 2026: E2, 2007-style heuristic guidance field (see SampleCell)
+bool gf_heuristic = false;
 
 bool endswith(const char *s, const char *end);
 
@@ -2198,8 +2200,13 @@ void IsoSurfaceGuidanceField::SampleCell(int id, int cell[3],
 		return; // no intersection at all!
 
 
-	// third partial tensor
+	// 2026: gf_heuristic reproduces the 2007 guidance field: curvature sampled at a fixed
+	// curvature_sub^3 points per cell that the isosurface crosses, no interval bound on the
+	// curvature and no bound-driven refinement (compare the certified field of the paper)
+	int samples_needed = curvature_sub;
 	int third_sign[3][3][3];
+	if (!gf_heuristic) {
+	// third partial tensor
 	for (int i=0; i<3; i++) {
 		for (int j=0; j<3; j++) {
 			for (int k=0; k<3; k++) {
@@ -2331,7 +2338,8 @@ void IsoSurfaceGuidanceField::SampleCell(int id, int cell[3],
 
 
 	// subdivide if needed
-	int samples_needed = (gradmag.min<=0) ? 1000000 :  std::max(1,((int)(diag/ideal_bound / 2)));
+	samples_needed = (gradmag.min<=0) ? 1000000 :  std::max(1,((int)(diag/ideal_bound / 2)));
+	}
 	if (samples_needed > curvature_sub) {
 		real_type center[3] = { (xspan_s[0].min+xspan_s[0].max)/2,
 								(xspan_s[1].min+xspan_s[1].max)/2,

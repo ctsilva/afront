@@ -145,6 +145,7 @@ thlib::CSObject *critical_section;
 
 bool noedgeflip = false;
 extern bool no_isotopic_boundary;
+extern bool gf_heuristic;
 bool endswith(const char *s, const char *end) {
 	int slen = strlen(s);
 	int endlen = strlen(end);
@@ -3346,6 +3347,7 @@ int main(int argc, char* argv[]) {
 	CL_ADD_VAR(cl,small_crease,		  "edge_count : creases with less than <edge_count> edges will be discarded (default 20)");
 	CL_ADD_VAR(cl,outname,			  ": the file to output the mesh to");
 	CL_ADD_VAR(cl,meshfrontfile,      ": the file name to read the initial front for remeshing from");
+	CL_ADD_VAR(cl,gf_heuristic, ": 2007-style guidance field: curvature_sub^3 curvature samples per cell crossing the surface, no interval bounds");
 	CL_ADD_VAR(cl,no_isotopic_boundary, ": ablation, do not subdivide block-face boundary curves with certified recursion");
 	CL_ADD_VAR(cl,noedgeflip,		  ": disable streaming edge flipper on the output stream");
 	CL_ADD_VAR(cl,histname,			  ": the file to output the histogram to");
