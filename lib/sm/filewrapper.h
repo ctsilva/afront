@@ -18,6 +18,7 @@ inline FILE* myfopen(FILE *f, const char *mode) {
 #else
 
 #include <stdio.h>
+#include <wchar.h>   // before our fclose(myfile*) overload: glibc's wchar.h declares functions with __attribute__((malloc(fclose, 1))), which is ambiguous once the overload exists
 #include <stdarg.h>
 #include <zlib.h>
 #include <sys/stat.h>

@@ -10,6 +10,7 @@
  */
 
 // -- INCLUDES -- //
+#include <cstring>   // gcc/libstdc++ needs it explicitly
 #include "PC_io.h"
 
 /**

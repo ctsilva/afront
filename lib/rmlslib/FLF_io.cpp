@@ -12,6 +12,7 @@
  */
 
 // -- INCLUDES -- //
+#include <cstring>   // gcc/libstdc++ needs it explicitly
 #include "FLF_io.h"
 
 /**

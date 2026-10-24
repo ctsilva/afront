@@ -1,3 +1,4 @@
+#include <cstring>   // gcc/libstdc++ needs it explicitly
 #include <fstream>
 #include "TriMesh.h"
 

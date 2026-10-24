@@ -10,6 +10,7 @@
  */
 
 // -- INCLUDES -- //
+#include <algorithm>   // gcc/libstdc++ needs it explicitly
 #include "Primitive_Functions.h"
 
 /**

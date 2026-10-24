@@ -1,4 +1,6 @@
 
+#include <climits>   // gcc/libstdc++ needs it explicitly
+#include <algorithm>   // gcc/libstdc++ needs it explicitly
 #include <vector>
 #include <fstream>
 

@@ -14,6 +14,7 @@
  */
 
 // -- INCLUDES -- //
+#include <algorithm>   // gcc/libstdc++ needs it explicitly
 #include "QuadraticSurface.h"
 
 // -- DEFINES -- //

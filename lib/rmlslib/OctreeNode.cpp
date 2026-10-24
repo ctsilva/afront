@@ -8,6 +8,7 @@
  * date:	March 2006
  *
  */
+#include <climits>   // gcc/libstdc++ needs it explicitly
 #include "OctreeNode.h"
 #include <iostream>
 
