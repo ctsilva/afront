@@ -1860,6 +1860,7 @@ void Triangulator::UpdateWorkingBlock(bool first) {
     vector< vector<Point3> > new_seeds;
 
     PauseProjections();
+    double sw_start = get_time_seconds();
     if (first) {
 		haveWorkingBlock = true;
 		controller.GetFirstBlock(workingBlock, new_pts, new_norms, new_loops, new_seeds);
@@ -1867,6 +1868,15 @@ void Triangulator::UpdateWorkingBlock(bool first) {
 		haveWorkingBlock = controller.GetNextBlock(workingBlock, new_pts, new_norms, new_loops, new_seeds);
     }
     ContinueProjections();
+    {   // 2026: time between block switches = triangulation of the previous block
+		static double prev_end = 0, tot_switch = 0, tot_tri = 0; static int nswitch = 0;
+		double now = get_time_seconds();
+		double tri = prev_end > 0 ? sw_start - prev_end : 0;
+		tot_switch += now - sw_start; tot_tri += tri; nswitch++;
+		fprintf(stderr, "\n[TIMING] block switch %d: switch=%.2f s, previous block triangulated in %.2f s (cumulative switch=%.2f tri=%.2f)\n",
+				nswitch, now - sw_start, tri, tot_switch, tot_tri);
+		prev_end = now;
+    }
 
 
     // move stuff into the new working area

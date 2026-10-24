@@ -3006,6 +3006,23 @@ class LineEvalCell {
 };
 
 
+
+// 2026: per-stage wall-clock timing of the out-of-core guidance field, one [TIMING] line per block
+#include <sys/time.h>
+struct StageTimer {
+	double last;
+	vector< std::pair<const char*, double> > stages;
+	static double now() { struct timeval tv; gettimeofday(&tv, NULL); return tv.tv_sec + tv.tv_usec/1e6; }
+	StageTimer() : last(now()) {}
+	void mark(const char *name) { double t = now(); stages.push_back(std::make_pair(name, t-last)); last = t; }
+	void report(const char *what, int block, int nblocks) const {
+		double tot = 0; for (unsigned i=0; i<stages.size(); i++) tot += stages[i].second;
+		fprintf(stderr, "\n[TIMING] %s block %d/%d total=%.2f", what, block, nblocks, tot);
+		for (unsigned i=0; i<stages.size(); i++) fprintf(stderr, " %s=%.2f", stages[i].first, stages[i].second);
+		fprintf(stderr, "\n");
+	}
+};
+
 void IsoSurfaceGuidanceField::GetBlockFaceBoundaries(real_type isovalue, int axis, bool min, vector< vector<Point3> > &bsegments, vector<bool> &bloops) const { 
 
 	int bmin[3];
@@ -3938,7 +3955,9 @@ IsoSurfaceGuidanceField::IsoSurfaceGuidanceField(IsoSurfaceProjector &projector,
 		 block< (_block<0 ? volume.NumBlocks() : _block+1);
 		 block++) {
 
+		StageTimer stimer;
 		volume.SetActiveBlock(block);
+		stimer.mark("load");
 
 		cerr<<"computing guidance field for block "<<block<<" of "<<volume.NumBlocks()<<endl;
 		int ab[3];
@@ -4069,6 +4088,7 @@ IsoSurfaceGuidanceField::IsoSurfaceGuidanceField(IsoSurfaceProjector &projector,
 				ITS2TM(oc_its.triangulation, mc_mesh);
 			}
 
+			stimer.mark("faces_mc");
 			cerr<<"finding connected components"<<endl;
 			vector< vector<int> > components;
 			GetConnectedComponents(mc_mesh, components);
@@ -4122,6 +4142,7 @@ IsoSurfaceGuidanceField::IsoSurfaceGuidanceField(IsoSurfaceProjector &projector,
 		if (!reuse_guidance) {
 
 			// compute the curvatures of the boundaries for the guidance field
+			stimer.mark("components");
 			cerr<<"gf for boundaries"<<endl;
 			vector< vector<Point3> > bnd_pts;
 			vector< vector<Vector3> > bnd_norms;
@@ -4162,9 +4183,11 @@ IsoSurfaceGuidanceField::IsoSurfaceGuidanceField(IsoSurfaceProjector &projector,
 			}
 
 
+			stimer.mark("bnd_curv");
 			cerr<<"finding gf points"<<endl;
 			ParallelExecutor(idealNumThreads, makeClassFunctor(this,&IsoSurfaceGuidanceField::BuildGuidanceParallel), isovalue, projector, gf_pts, gf_ideals);
 			num_orig += gf_pts.size();
+			stimer.mark("gf_points");
 
 			// trim 1
 			vector<Point3> tpts1;
@@ -4195,6 +4218,7 @@ IsoSurfaceGuidanceField::IsoSurfaceGuidanceField(IsoSurfaceProjector &projector,
 
 
 			num_trimmed += tpts.size();
+			stimer.mark("trim");
 		}
 
 		else {
@@ -4210,6 +4234,8 @@ IsoSurfaceGuidanceField::IsoSurfaceGuidanceField(IsoSurfaceProjector &projector,
 		}
 
 		volume.SetBlockGuidanceField(tpts, tideals);
+		stimer.mark("store");
+		stimer.report("gf", block, volume.NumBlocks());
     }
 
 	volume.SetGuidanceFieldDone();
