@@ -43,6 +43,46 @@ Afront is an advancing front triangulation algorithm that can be applied to many
 
 ---
 
+## Gallery
+
+All images below were produced with the current build (October 2026, Apple M3 Max, 8
+threads) and rendered with [`tools/render_mesh.py`](tools/render_mesh.py), a small numpy
+z-buffer renderer that reads afront's `.m` output, `.off` meshes and `.obj` point sets.
+
+**Remeshing.** The scanned Stanford bunny (`data/bunny.off`) remeshed with
+`./afront -nogui data/bunny.off -rho 0.5 -tri`. The output has half the triangles, graded by
+curvature: small on the ears and face, large on the back. 2.5 s.
+
+![bunny remesh](docs/images/bunny_remesh.png)
+
+**Remeshing a dense, over-sampled surface.** `data/knot-300-100.off`, a 60,000-triangle
+torus knot, remeshed at `-rho 0.5` to 4,212 well-shaped triangles. 1.3 s.
+
+![knot remesh](docs/images/knot_remesh.png)
+
+**Point-set surfaces.** `data/bunny-points-with-normals.obj` (36,228 points with normals)
+meshed through the moving-least-squares projection:
+`./afront -nogui data/bunny-points-with-normals.obj -rho 0.5 -tri_mls`. The result is a
+closed genus-0 surface. 6.8 s.
+
+![bunny point cloud to MLS mesh](docs/images/bunny_points_mls.png)
+
+**Isosurfaces, in-core and out-of-core.** A synthetic 128^3 volume (a torus, ten spheres
+and three blobs cut by the volume boundary) extracted in-core and from the same volume
+bricked into 64 blocks of 32^3 with `-save_ooc`. The two meshes have the same ten components
+with matching sizes; the block boundaries leave no seams.
+
+![in-core versus out-of-core isosurface](docs/images/isosurface_incore_vs_ooc.png)
+
+**Why out-of-core.** The dissertation's block-size experiment (`scripts/blocksize_test.sh`)
+rerun on a synthetic 512^3 volume: peak memory follows the block size while run time grows
+slowly with the number of blocks. In-core extraction peaks at 820 MB; 32^3 blocks at 42 MB
+for a 20% longer run. Marching cubes on the same bricked field is shown for comparison.
+
+![block-size sweep](docs/images/ooc_blocksize_sweep.png)
+
+---
+
 ## Features
 
 ### Core Capabilities
