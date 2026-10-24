@@ -610,12 +610,25 @@ tTriangleMesh<T>::VertexFaceIteratorI::VertexFaceIteratorI(const tTriangleMesh<T
 
 	// rotate clockwise as far as possible
 	cur_face = mesh->verts[vi].someface;
+	steps = 0;
 	if (cur_face != -1) {
+		// Around a nonmanifold vertex the clockwise walk can enter a cycle of
+		// faces that never returns to someface and never reaches a boundary
+		// (hung forever on dragonrecon.off). A manifold fan never has more faces
+		// than the vertex valence, so a fixed bound far above any real valence
+		// stops the cycle without slowing normal vertices.
+		int walked = 0;
 		do {
 			const TriangleMeshFace &f = mesh->faces[cur_face];
 			int cindex = f.VertIndex(vi);
 			if (f.nbrs[cindex] == -1) break;
 			cur_face = f.nbrs[cindex];
+			if (++walked > MAX_VERTEX_FAN) {
+				static bool warned = false;
+				if (!warned) { std::cerr << "VertexFaceIteratorI: nonmanifold vertex " << vi << ", face walk does not close (warning printed once)" << std::endl; warned = true; }
+				cur_face = mesh->verts[vi].someface;
+				break;
+			}
 		} while (cur_face != mesh->verts[vi].someface);
 		first_face = cur_face;
 	}
@@ -642,6 +655,10 @@ typename tTriangleMesh<T>::VertexFaceIteratorI& tTriangleMesh<T>::VertexFaceIter
 	cur_face = f.nbrs[nindex];
 
 	if (cur_face==first_face)
+		cur_face = -1;
+
+	// same guard as the constructor, for the counter-clockwise walk
+	if (++steps > MAX_VERTEX_FAN)
 		cur_face = -1;
 
 	first = false;

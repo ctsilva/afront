@@ -76,6 +76,7 @@ inline bool tTriangleMesh<T>::VertOnBoundary(int v) const
 	int f = verts[v].someface;
 	if (f < 0) return false;	// no faces touching the vert!
     assert (f < (int)faces.size());
+	int walked = 0;
 	do {
 
 		int vfi = faces[f].VertIndex(v);
@@ -84,6 +85,9 @@ inline bool tTriangleMesh<T>::VertOnBoundary(int v) const
 			return true;
 
 		f = faces[f].nbrs[vfi];
+
+		if (++walked > MAX_VERTEX_FAN)
+			return true;	// nonmanifold: the walk never closes, treat as boundary
 
 	} while (f != verts[v].someface);
 

@@ -203,6 +203,11 @@ public:
 	    friend class tTriangleMesh<T>::VertexVertexIterator;
 	};
 
+	// Faces visited around one vertex before a fan walk is declared cyclic. A
+	// manifold fan never has more faces than the vertex valence; around a
+	// nonmanifold vertex the nbrs chain can cycle without returning to someface.
+	static const int MAX_VERTEX_FAN = 4096;
+
 	class VertexFaceIteratorI {
 	public:
 
@@ -217,6 +222,7 @@ public:
 		int cur_face;
 		int first_face;
 		int vertex;
+		int steps;   // faces visited by operator++; guards the walk around nonmanifold vertices
 		const tTriangleMesh<T> *mesh;
 
 	    friend class tTriangleMesh<T>::VertexVertexIteratorI;
