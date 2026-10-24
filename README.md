@@ -4,24 +4,25 @@
 
 ## Project History
 
-Afront was developed in the mid-2000s and published at Eurographics and TVCG (see details below for the full papers). At some point the code was released on SourceForge. This version was resurrected directly from a copy of the internal CVS repository. With the help of Claude, we have compiled it on macOS, and we plan to get it working on Linux and Windows. The code uses lots of legacy things, including ancient OpenGL, GLUT, etc.
+Afront was developed in the mid-2000s and published at Eurographics and TVCG (see details below for the full papers). The code was released on SourceForge in January 2007 and John Schreiner kept developing it there until March 2009 for his dissertation: interval-arithmetic bounds that make the guidance field provably sufficient, out-of-core isosurface extraction from bricked volumes, streaming mesh output and multimaterial extraction. This repository started in October 2025 from the January 2007 internal CVS tree, patched to build on macOS. In October 2026 the full 2009 SourceForge tree was recovered (see `~/src/afront-2009-cvs` and [FOLD_NOTES.md](FOLD_NOTES.md)) and folded in; the current sources are that 2009 code plus the macOS fixes. The code uses lots of legacy things, including ancient OpenGL, GLUT, etc.
 
 ## Build Status
 
 ✅ **Successfully compiled and running on macOS (Apple Silicon ARM64)**
-- Platform: macOS Darwin 25.0.0
-- Compiler: Apple Clang 17.0.0
+- Platform: macOS Darwin 27.2.0 (first built on 25.0.0)
+- Compiler: Apple Clang 21 (first built with 17)
 - Architecture: ARM64
-- GUI mode: ✅ Functional (with GLUT threading fixes)
-- Batch mode (`-nogui`): ✅ Functional (heap-buffer-overflow bug fixed)
-- Threading: ✅ Stable with any thread count (1-16+ threads)
-- Tested: Mesh remeshing, isosurface extraction, basic operations work
+- GUI mode: ✅ Functional (GLUT on the main thread, re-ported onto the 2009 viewer)
+- Batch mode (`-nogui`): ✅ Functional, AddressSanitizer-clean on the tested paths
+- Tested (October 2026, 2009 code): mesh remeshing (`data/bunny.off`, 2.5 s), point-cloud
+  reconstruction (`data/bunny-points-with-normals.obj`, closed genus-0 result), isosurface
+  extraction in-core and out-of-core on synthetic 64^3 to 512^3 volumes (correct topology,
+  identical component sets in-core vs bricked)
 
 ⚠️ **Important Caveats**
-- This 20-year-old codebase has been patched to compile on current systems, but **not all functionality has been tested**
+- This 20-year-old codebase has been patched to compile on current systems, but **not all functionality has been tested**: CSG, tetrahedral meshes, multimaterial extraction and the feature-line (.flf) path have not been exercised since the fold
 - Some features may not work due to legacy library incompatibilities (ancient OpenGL, Numerical Recipes routines, etc.)
-- Multi-threading provides limited benefit for mesh triangulation (curvature computation is single-threaded)
-- SVD numerical instability may affect some edge cases
+- Seeding fails ("couldn't project seed point") when ideal edge lengths exceed about two voxels; use `-max_step` on coarse volumes
 - Use with caution and expect issues with untested workflows
 
 See [CLAUDE.md](CLAUDE.md) for detailed compilation fixes and performance characteristics.
@@ -51,6 +52,10 @@ Afront is an advancing front triangulation algorithm that can be applied to many
 - ✅ **CSG boolean operations** - Union, intersection, and subtraction of meshes
 - ✅ **Interactive GUI** - OpenGL-based visualization for debugging and inspection
 - ✅ **Multi-threaded** - Parallel surface projection for performance
+- ✅ **Out-of-core isosurface extraction** - Volumes bricked into blocks (`-save_ooc`, `.nooc`) are meshed block by block in Z-order with a per-block guidance field; peak memory follows the block size, not the volume size
+- ✅ **Certified guidance field** - Interval arithmetic (`interval.h`, `spline.h`) bounds the curvature of the tensor-product B-spline field, so the sampled guidance field is sufficient rather than heuristic
+- ✅ **Streaming output** - `.sma/.smb/.smc/.smd(.gz)` streaming meshes (Isenburg's format, `lib/sm`), viewable with `sm_viewer`
+- ✅ **Multimaterial extraction** - `-multi_material` for label volumes (untested since the fold)
 
 ### Algorithm Highlights
 - **Priority-based front propagation** - Uses a heap to process edges in optimal order
@@ -153,6 +158,8 @@ file ./afront    # Should show: Mach-O 64-bit executable (macOS) or ELF 64-bit (
 | Triangle Mesh | `.m`, `.off` | Mesh | Input mesh for remeshing or CSG |
 | Point Cloud | `.obj`, `.pc` | Points | Point set for MLS reconstruction |
 | Volume | `.vol`, `.nhdr` | Regular grid | 3D scalar field for isosurface extraction |
+| Bricked volume | `.nooc` | Out-of-core grid | Written by `-save_ooc`; a `.blocks/` directory next to it holds the bricks |
+| Streaming mesh | `.sma` | Mesh | Isenburg streaming mesh (read in-core by gtb) |
 | Tetrahedral Mesh | `.offt` | Irregular grid | Tetrahedral mesh (renamed from .off for distinction) |
 | Feature Lines | `.flf` | Constraints | Sharp features for constrained triangulation |
 | Second Mesh | mesh2 | Mesh | Optional second triangle mesh for CSG operations |
@@ -232,6 +239,24 @@ For batch processing or server environments:
 
 ---
 
+### 6. Out-of-Core Isosurface Extraction
+
+Brick the volume once, then extract from the bricked copy. Peak memory follows the block
+size: on a synthetic 512^3 volume, in-core extraction peaks at 820 MB and 32^3 blocks at 42 MB,
+for a 20% longer run.
+
+```bash
+# write vol.nooc and vol.blocks/ with 64^3 bricks (the six zeros are unused options)
+./afront -nogui ./volume.nhdr -save_ooc ./ooc vol 64 64 64 0 0 0 0 0 0 1
+
+# extract from the bricks; output streams to a .smb so it never has to fit in memory
+cd ooc && ../afront -nogui ./vol.nooc -rho 0.5 -outname out.smb -tri 150.5 bspline
+```
+
+`-reuse_guidance 1` reuses the per-block guidance field written to `oocgf/` on a second
+run with a different isovalue sampling. `scripts/blocksize_test.sh` and `scripts/volsize_test.sh`
+are the dissertation's block-size and volume-size experiments.
+
 ## Parameters
 
 ### Triangle Sizing Control
@@ -294,8 +319,7 @@ For batch processing or server environments:
 | `-tri_mesh` | `[subdiv]` | Triangulate mesh (optional Loop subdivision level) |
 | `-tri_vol` | `<isovalue> [bspline]` | Extract isosurface from volume |
 | `-tri_tet` | `<isovalue>` | Extract isosurface from tetrahedral mesh |
-| `-tri_mls` | - | Triangulate MLS surface from points |
-| `-tri_smoothmls` | - | Triangulate smooth MLS surface |
+| `-tri_mls` | - | Triangulate MLS surface from points (was `-tri_smoothmls` in the 2007 tree) |
 | `-tri_region` | `<point>` | Triangulate region around specified point |
 | `-csg` | `union\|int\|sub [subdiv]` | Boolean operation on two meshes |
 | `-sharp` | `<cos_angle>` | Sharp feature detection threshold |
@@ -312,8 +336,17 @@ For batch processing or server environments:
 | `-meshinfo` | - | Display detailed mesh statistics |
 | `-flip` | - | Flip mesh orientation |
 | `-subdiv` | `<N>` | Apply N Loop subdivision iterations |
-| `-load_field` | `<file>` | Load pre-computed guidance field |
-| `-save_field` | `<file>` | Save guidance field to file |
+| `-save_ooc` | `<dir> <name> bx by bz 0 0 0 0 0 0 <sampling>` | Brick a volume into blocks of bx x by x bz voxels, writing `<dir>/<name>.nooc` |
+| `-make_gf` | `<block> <isovalue> [bspline]` | Build the guidance field for one block (used by `scripts/gfdistrib.py`) |
+| `-reuse_guidance` / `-reuse_seeds` | `<0\|1>` | Reuse the per-block guidance field / seeds saved in `oocgf/` |
+| `-prefetch_rings`, `-prefetch_lookahead`, `-max_grab_bag` | `<N>` | Out-of-core block cache control |
+| `-value_tol`, `-step_tol`, `-max_iter` | `<v>` | Projection convergence (defaults 1e-8, 1e-4, 50) |
+| `-noedgeflip` | `<0\|1>` | Also available as a variable |
+| `-multi_material` | `[bspline]` | Multimaterial extraction from a label volume |
+| `-vol_smooth` | - | Smooth a volume (was `-volsmooth`) |
+
+Removed since the 2007 tree: `-load_field`, `-save_field`, `-save_vol`, `-reeb`, `-reeb_eps`,
+`-proj_tol`, `-saliency`. Run `./afront -nogui x` to print the full list.
 
 ---
 
@@ -451,9 +484,12 @@ done
 Afront can generate output in multiple formats through different output controllers:
 
 - **`.m` format** - Standard mesh format (Meshview compatible)
-- **`.off` format** - Object File Format
+- **`.obj` format** - Wavefront OBJ
+- **`.sma` / `.smb` / `.smc` / `.smd` (optionally `.gz`)** - Isenburg streaming meshes, written
+  as the front advances, so the output never has to fit in memory; `build/sm_viewer` displays them
 - **HHM format** - Custom hierarchical mesh format
-- **OBJ format** - Wavefront OBJ (via output controller)
+
+`.ply` is not supported; `-outname out.ply` exits with a message (convert with `convert_ply_to_off.py`).
 
 Output controllers can be chained to produce multiple outputs simultaneously.
 
@@ -566,14 +602,14 @@ Enable GUI to visualize fronts during triangulation:
 **Core libraries:**
 - **gtb** - Graphics toolbox (point/vector/matrix operations, KD-trees)
 - **mlslib** - Moving Least Squares surface projection
-- **rmlslib** - Robust MLS implementation
+- **sm** - Isenburg's streaming-mesh reader/writer (lib/sm, 2009)
 - **ThreadLib** - Multi-threading support
 - **viewer** - OpenGL visualization
+- **rmlslib** - Robust MLS implementation (VGC-internal; builds, but afront is compiled with `NO_RMLS`)
 
 **External dependencies:**
 - OpenGL/GLU/GLUT - Graphics
 - X11 - Windowing (via XQuartz on macOS)
-- libtiff - TIFF image support
 - zlib - Compression
 - pthreads - Threading
 
@@ -581,17 +617,18 @@ Enable GUI to visualize fronts during triangulation:
 
 The code is compiled with:
 - `-DUSENR` - Use Numerical Recipes algorithms
-- `-DREAL_IS_FLOAT` - Use float precision (vs double)
+- `-DREAL_IS_DOUBLE` - Use double precision (the 2009 multimaterial code does not compile as float)
 - `-D_REENTRANT` - Thread-safe code
 - `-Wno-c++11-narrowing` - Suppress modern C++ warnings
 
 ### Threading Model
 
-- **Main thread:** Front propagation (sequential for correctness)
-- **Worker threads:** Surface projection (parallel for performance)
-- **GUI thread:** Visualization (separate with mutex protection)
+- **Front propagation:** sequential for correctness (the main thread in `-nogui` mode, a worker thread in GUI mode)
+- **Projector threads:** `idealNumThreads/2` threads project tentative vertices in parallel
+- **Guidance field:** curvature sampling and trimming run on `idealNumThreads` threads
+- **Main thread (GUI mode):** runs GLUT, as macOS requires
 
-Default: 8 threads on modern CPUs
+Default: 8 threads (`-idealNumThreads N` to change). On the bunny, 1 thread takes 8 s and 8 threads 2.5 s.
 
 ---
 
@@ -698,7 +735,28 @@ See individual source files for specific license headers and copyright informati
 
 ---
 
-## Changelog (2025 Update)
+## Changelog
+
+### 2009 code folded in (October 2026)
+
+The SourceForge CVS repository (John Schreiner's commits 2007-01-09 to 2009-03-24) was
+recovered and replaces the 2007 sources; see [FOLD_NOTES.md](FOLD_NOTES.md) and
+[PLAN.md](PLAN.md). Highlights:
+
+- Out-of-core isosurface extraction (`-save_ooc`, `.nooc`, per-block guidance fields,
+  Z-order block traversal), interval-arithmetic guidance field bounds, streaming output,
+  multimaterial extraction, `sm_viewer`, the dissertation's experiment scripts in `scripts/`.
+- Four bugs fixed while reviving it: a dangling reference in the guidance-field trimmer, a
+  front merge that inserted through the wrong list (crashes with libc++'s cached list size),
+  an infinite loop when no seed can be projected, and a crash on unknown output extensions.
+- Real type is now double. `-tri_smoothmls` is now `-tri_mls`.
+- Same machine, `data/bunny.off`: 2.5 s instead of 21 s (the 2007 ThreadLib spent 42 s of
+  system time in lock contention). The bunny point cloud now reconstructs; the 2007 build
+  produced a degenerate 4-vertex mesh.
+- The macOS GUI fix and the `[TIMING]` lines were re-applied on the 2009 code; the 2007 SVD
+  tolerance patch was not (no convergence failures seen with double precision).
+
+### Modernization for macOS Apple Silicon (October 2025, 2007 tree)
 
 ### Modernization for macOS Apple Silicon (October 2025)
 
@@ -750,6 +808,7 @@ The original codebase (circa 2005) has been successfully modernized to compile a
   ```
 - Confirmed performance benchmarks: ~14,000 verts/sec, ~1,900 tris/sec
 - Guidance field trimming shows 4.7x speedup with 16 threads (0.94s → 0.20s)
+- (With the 2009 code these numbers are ~100,000 verts/sec and ~19,000 tris/sec on the same bunny.)
 
 The code maintains backwards compatibility with Linux while now supporting modern macOS.
 
@@ -769,5 +828,5 @@ Special thanks to all contributors and funding organizations that made this rese
 
 ---
 
-**Last Updated:** October 2025
-**Build Tested:** macOS 15.0 (ARM64), Xcode 17.0.0
+**Last Updated:** October 2026
+**Build Tested:** macOS 27.2 (ARM64), Apple clang 21

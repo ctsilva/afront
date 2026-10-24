@@ -47,12 +47,11 @@ The 9x speedup on bunny comes from the 2009 ThreadLib/triangulator changes
 
 ## Not done / decisions left
 
-- GUI: the 2007 repo's GLUT-on-main-thread port (viewer.cpp/.h, main.cpp) is not
-  re-applied; the 2009 viewer.cpp changed ~480 lines so it has to be redone by hand
-  following CLAUDE.md section 10. Use -nogui until then.
-- The 2007 repo's svdcmp.inl tolerance/iteration patch and the [TIMING] logging
-  were not carried over (the 2009 double build showed no SVD convergence failures
-  on bunny). Re-apply if wanted.
+- GUI: the GLUT-on-main-thread port was redone on the 2009 viewer in the next commit
+  (done 2026-10-24, verified on bunny.off).
+- The [TIMING] logging was brought back in the same commit. The 2007 repo's
+  svdcmp.inl tolerance/iteration patch was not (no SVD convergence failures with
+  double precision on the test data).
 - Command renames: tri_smoothmls -> tri_mls, volsmooth -> vol_smooth; save_vol,
   reeb, reeb_eps are gone; options load_field/save_field/proj_tol/saliency/
   grid_intersect_overestimate are gone. New: save_ooc, make_gf, multi_material,
@@ -60,4 +59,4 @@ The 9x speedup on bunny comes from the 2009 ThreadLib/triangulator changes
   -reuse_*, -noedgeflip, -value_tol/-step_tol/-max_iter options.
 - src/test_glut*.cpp no longer compile (SimpleViewer gained pure virtuals); left out
   of the build.
-- README.md, CLAUDE.md, docs/ARCHITECTURE.md still describe the 2007 code.
+- README.md, CLAUDE.md, docs/ARCHITECTURE.md were updated for the 2009 code (same day).

@@ -25,22 +25,25 @@ succeeds on the bunny point cloud where the 2007 build produced a degenerate
    the VGC-only rmlslib and Reeb-graph code, new CMake build, real_type = double,
    port the 2007 isolated-vertex fix. Verified: bunny mesh, bunny point cloud,
    torus volume in-core and out-of-core. Commit "Fold in the 2009 SourceForge afront".
-2. [ ] Fetch the branch into this repository and rebuild from scratch.
-3. [ ] Re-port the macOS GUI fix (GLUT must run on the main thread) onto the 2009
+2. [done] Fetch the branch into this repository and rebuild from scratch.
+3. [done] Re-port the macOS GUI fix (GLUT must run on the main thread) onto the 2009
    viewer: `lib/viewer/viewer.cpp` `Start()` initializes GLUT synchronously and
    `Go()` only runs the event loop; `src/main.cpp` runs the command parsing in a
    worker thread while the main thread runs `gui->Go()`. Also the Command-key
    dolly modifier. Verify the GUI opens and triangulates `data/bunny.off`.
-4. [ ] Bring back the `[TIMING]` log lines from the 2007 revival (curvature,
+4. [done] Bring back the `[TIMING]` log lines from the 2007 revival (curvature,
    trimming, triangulation) in `triangulate_mesh.cpp`, `guidance.cpp`,
    `triangulator.cpp`. The 2007 SVD tolerance patch is deliberately not re-applied:
    with double precision no convergence failures were seen; revisit if they appear.
-5. [ ] Update documentation: `README.md`, `CLAUDE.md`, `docs/ARCHITECTURE.md`
+5. [done] Update documentation: `README.md`, `CLAUDE.md`, `docs/ARCHITECTURE.md`
    describe the 2007 code. Record the new build flags, the 2009 fixes, the command
    renames (`tri_smoothmls` -> `tri_mls`, `volsmooth` -> `vol_smooth`; `reeb`,
    `save_vol` removed) and the out-of-core workflow (`-save_ooc`, `.nooc`,
    `-prefetch_*`, `-reuse_guidance`).
-6. [ ] Merge `fold-2009` into `main` (local only, no push).
+   Step 3 verified by running `./afront ../data/bunny.off -rho 0.5 -tri` for 20 s: the
+   window opens, the bunny renders, the worker thread triangulates ("waiting for key"
+   stepping mode), no main-thread GLUT abort.
+6. [done] Merge `fold-2009` into `main` (local only, no push).
 
 ## Kept as-is, decided
 
