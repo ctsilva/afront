@@ -15,17 +15,21 @@ if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Release)
 endif()
 
-add_compile_options(
-  -DUSENR -DREAL_IS_DOUBLE -D_REENTRANT
-  -Wno-c++11-narrowing -Wno-deprecated-declarations -Wno-register
-  -Wno-writable-strings -Wno-dangling-else -Wno-format
-)
+add_compile_options(-DUSENR -DREAL_IS_DOUBLE -D_REENTRANT -Wno-deprecated-declarations -Wno-dangling-else -Wno-format)
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  add_compile_options(-Wno-c++11-narrowing -Wno-register -Wno-writable-strings)
+else()
+  add_compile_options(-Wno-narrowing -Wno-register -Wno-write-strings -Wno-unused-result)
+endif()
 
+add_definitions(-Dstricmp=strcasecmp)
 if(APPLE)
-  add_definitions(-Dstricmp=strcasecmp -DGL_SILENCE_DEPRECATION)
+  add_definitions(-DGL_SILENCE_DEPRECATION)
   include_directories(/opt/X11/include /opt/homebrew/include)
   link_directories(/opt/X11/lib /opt/homebrew/lib)
 endif()
+# Linux: GLUT from the distribution (freeglut3-dev) or from a local prefix passed as
+# -DCMAKE_PREFIX_PATH=$HOME/src/local (see CLAUDE.md, "Building on Linux").
 
 set(SRC ${CMAKE_SOURCE_DIR})
 include_directories(${SRC} ${SRC}/lib ${SRC}/src)
@@ -159,6 +163,10 @@ add_executable(afront ${AFRONT_SRCS})
 
 find_package(OpenGL REQUIRED)
 find_library(GLUT_LIB NAMES glut freeglut PATHS /opt/homebrew/lib)
+find_path(GLUT_INCLUDE_DIR GL/glut.h PATHS /opt/homebrew/include)
+if(GLUT_INCLUDE_DIR)
+  include_directories(${GLUT_INCLUDE_DIR})
+endif()
 find_package(ZLIB REQUIRED)
 find_package(Threads REQUIRED)
 
