@@ -1,4 +1,30 @@
 
+/*
+
+Copyright 2007 University of Utah
+
+
+This file is part of Afront.
+
+Afront is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published
+by the Free Software Foundation; either version 2 of the License,
+or (at your option) any later version.
+
+Afront is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
+02110-1301, USA
+
+*/
+
+
+
 #ifndef _TRIANGULATE_CSG
 #define	_TRIANGULATE_CSG
 
@@ -43,12 +69,9 @@ class MeshCSGGuidanceField : public GuidanceField {
     MeshCSGGuidanceField(int curv_sub, const TriangleMesh &mesh1, const TriangleMesh &mesh2, const vector<int> pointsides[2], vector< vector<Point3> > &curves, real_type rho, real_type min_step, real_type max_step, real_type reduction);
     ~MeshCSGGuidanceField();
 
-    int ClosestPoint(const Point3 &p);
-    void OrderedPointTraverseStart(const Point3 &p);
-    int OrderedPointTraverseNext(real_type &squared_dist);
-    void OrderedPointTraverseEnd();
-    const Point3& PointLocation(int i) const;
-    int NumPoints() const;
+    void* OrderedPointTraverseStart(const Point3 &p);
+    bool OrderedPointTraverseNext(void *ctx, real_type &squared_dist, Point3 &point, real_type &ideal);
+    void OrderedPointTraverseEnd(void *ctx);
 
     void Extract(vector<Point3> &pts, vector<Vector3> &norms, vector<real_type> &rad);
 
@@ -75,7 +98,9 @@ class MeshCSGGuidanceField : public GuidanceField {
     typedef gtb::KDTree<int, real_type, GetPoint> kdtree_type;
     kdtree_type *kdtree;
     GetPoint kdGetPoint;
-    kdtree_type::OrderedIncrementalTraverse *kdOrderedTraverse;
+
+    vector<real_type> ideal_length;
+
 };
 
 
@@ -87,12 +112,10 @@ class MeshPSCSGGuidanceField : public GuidanceField {
     MeshPSCSGGuidanceField(int curv_sub, const TriangleMesh &mesh, const surfel_set &points, CProjection &psprojector, vector< vector<Point3> > &curves, real_type rho, real_type min_step, real_type max_step, real_type reduction, int adamson);
     ~MeshPSCSGGuidanceField();
 
-    int ClosestPoint(const Point3 &p);
-    void OrderedPointTraverseStart(const Point3 &p);
-    int OrderedPointTraverseNext(real_type &squared_dist);
-    void OrderedPointTraverseEnd();
-    const Point3& PointLocation(int i) const;
-    int NumPoints() const;
+    void* OrderedPointTraverseStart(const Point3 &p);
+    int OrderedPointTraverseNext(void *ctx, real_type &squared_dist);
+    bool OrderedPointTraverseNext(void *ctx, real_type &squared_dist, Point3 &point, real_type &ideal);
+    void OrderedPointTraverseEnd(void *ctx);
 
     void Extract(vector<Point3> &pts, vector<Vector3> &norms, vector<real_type> &rad);
 
@@ -124,7 +147,8 @@ class MeshPSCSGGuidanceField : public GuidanceField {
     typedef gtb::KDTree<int, real_type, GetPoint> kdtree_type;
     kdtree_type *kdtree;
     GetPoint kdGetPoint;
-    kdtree_type::OrderedIncrementalTraverse *kdOrderedTraverse;
+
+    vector<real_type> ideal_length;
 };
 
 

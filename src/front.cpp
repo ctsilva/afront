@@ -1,4 +1,30 @@
 
+/*
+
+Copyright 2007 University of Utah
+
+
+This file is part of Afront.
+
+Afront is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published
+by the Free Software Foundation; either version 2 of the License,
+or (at your option) any later version.
+
+Afront is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
+02110-1301, USA
+
+*/
+
+
+
 #include "common.h"
 #include "front.h"
 
@@ -17,7 +43,10 @@ Front::feli Front::AddElement(FrontElement &e) {
 // split the front at verts i1 and i2, return a pointer to the new front created
 Front* Front::Split(feli i1, feli i2, feli &n1, feli &n2) 
 {
-    if (i1->front != i2->front) BREAK;
+    if (i1->front != i2->front) {
+	cerr<<"splitting different fronts!"<<endl;
+	BREAK;
+    }
 
     Front *f1 = i1->front;
     Front *f2 = new Front();
@@ -43,7 +72,10 @@ Front* Front::Split(feli i1, feli i2, feli &n1, feli &n2)
 	    ++cutend;
 	}
 
-	if (cutend == f1->elements.end()) BREAK;
+	if (cutend == f1->elements.end()) {
+	    cerr<<"cutend at end!"<<endl;
+	    BREAK;
+	}
 
 	f2->elements.splice(f2->elements.end(), f1->elements, cutstart, cutend);
     } else {
@@ -74,7 +106,10 @@ Front* Front::Split(feli i1, feli i2, feli &n1, feli &n2)
 // merge two fronts, i1's front grows, i2's front will need to be deleted
 void Front::Merge(feli i1, feli i2, feli &n1, feli &n2) {
 
-    if (i1->front == i2->front) BREAK;
+    if (i1->front == i2->front) {
+	cerr<<"Merging a single front"<<endl;
+	BREAK;
+    }
 
     Front *f1 = i1->front;
     Front *f2 = i2->front;
@@ -93,7 +128,7 @@ void Front::Merge(feli i1, feli i2, feli &n1, feli &n2) {
 
     // add a copy of i1 to f2 just before i2
     n1 = i2;
-    f2->elements.insert(n1, *i1);
+    f1->elements.insert(n1, *i1); // 2026 fix: was f2->; i2 lives in f1 after the splices, inserting through f2 corrupted its cached size (libc++)
     --n1;
 
     // add a copy of i2 to f1 just before i1
@@ -169,10 +204,30 @@ void Front::verify() {
 	    BREAK;
 	}
 
+	if (e->flags & FRONT_FLAG_CONNECTOR && next->flags & FRONT_FLAG_CONNECTOR) {
+		cerr<<"two connectors in a row!"<<endl;
+		BREAK;
+	}
+
+	/*
 	if (e->vertindex == next2->vertindex) {
 	    cerr<<"next2 vertindex the same!"<<endl;
 	    BREAK;
 	}
+	*/
+
+	real_type dist = Point3::distance(e->position, next->position);
+	if (dist < e->max_step*0.1) {
+	    cerr<<"close front vertex locations!"<<dist<<endl;
+
+	    dbgClear();
+	    
+	    DbgPoints::add(e->position, 1,0,0);
+	    DbgPoints::add(next->position, 1,0,0);
+
+	    redrawAndWait(' ', true);
+	}
+	    
 
 	e = next;
 

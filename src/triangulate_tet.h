@@ -1,4 +1,30 @@
 
+/*
+
+Copyright 2007 University of Utah
+
+
+This file is part of Afront.
+
+Afront is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published
+by the Free Software Foundation; either version 2 of the License,
+or (at your option) any later version.
+
+Afront is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
+02110-1301, USA
+
+*/
+
+
+
 #ifndef _TRIANGULATE_TET
 #define	_TRIANGULATE_TET
 
@@ -10,7 +36,7 @@
 
 
 
-class TetMesh {
+class TetMesh : public gtb::tModel<real_type> {
 
     public:
     TetMesh() { }
@@ -47,6 +73,21 @@ class TetMesh {
     vector<Vert> verts;
     vector<Tet>  tets;
 
+
+    // Model stuff
+    void compute_bounding_box() const {
+	_bounding_box = Box3(verts[0].point, verts[0].point);
+	for (unsigned i=1; i<verts.size(); i++) {
+	    _bounding_box.update(verts[i].point);
+	}
+	_is_bounding_box_valid = true;
+    }
+
+
+    void compute_centroid() const {
+	_centroid = bounding_box().centroid();
+	_is_centroid_valid = true;
+    }
 };
 
 
@@ -63,7 +104,14 @@ class TetMeshProjector : public SurfaceProjector {
     virtual bool CurvatureAtPoint(const Point3 &p, real_type &k1, real_type &k2) const = 0;
     virtual int ProjectPoint(const Point3 &fp, Point3 &tp, Vector3 &tn) const = 0;
     int ProjectPoint(const FrontElement &base1, const FrontElement &base2, 
-		     const Point3 &fp, const Vector3 &fn, Point3 &tp, Vector3 &tn) const;
+		     const Point3 &fp, const Vector3 &fn, Point3 &tp, Vector3 &tn, real_type *curvature) const;
+
+    void GetFirstBlock(Box3 &box, vector< vector<Point3> > &pts, vector< vector<Vector3> > &norms, vector<bool> &loops, vector< vector<Point3> > &seeds) const {
+	box = mesh.bounding_box();
+	box.enlarge(0.1);
+    }
+    bool GetNextBlock(Box3 &box, vector< vector<Point3> > &pts, vector< vector<Vector3> > &norms, vector<bool> &loops, vector< vector<Point3> > &seeds) const { return false; }
+	int GetBlockForPoint(const Point3 &p) const { return 0; }
 
 
     const TetMesh& GetMesh() const { return mesh; }
@@ -188,7 +236,7 @@ class TetMeshProjectorMLS : public TetMeshProjector {
 
     private:
 
-    void SetRadiusParallel(int nt, int id);
+    void SetRadiusParallel(int nt, int id, CSObject &cs);
 
     class GetPoint {
 	public:
@@ -245,19 +293,17 @@ class TetMeshGuidanceField : public GuidanceField {
     TetMeshGuidanceField(TetMeshProjector &projector, real_type rho, real_type min_step, real_type max_step, real_type reduction);
     ~TetMeshGuidanceField();
 
-    int ClosestPoint(const Point3 &p);
-    void OrderedPointTraverseStart(const Point3 &p);
-    int OrderedPointTraverseNext(real_type &squared_dist);
-    void OrderedPointTraverseEnd();
+    void* OrderedPointTraverseStart(const Point3 &p);
+    bool OrderedPointTraverseNext(void *ctx, real_type &squared_dist, Point3 &point, real_type &ideal);
+    void OrderedPointTraverseEnd(void *ctx);
     const Point3& PointLocation(int i) const;
-    int NumPoints() const;
 
     void Extract(vector<Point3> &pts, vector<Vector3> &norms, vector<real_type> &rad);
 
 
     private:
 
-    void BuildGuidanceParallel(int nt, int id, real_type isovalue, const TetMesh &mesh, const vector<real_type> &scalars);
+    void BuildGuidanceParallel(int nt, int id, CSObject &cs, real_type isovalue, const TetMesh &mesh, const vector<real_type> &scalars);
 
     TetMeshProjector &projector;
 
@@ -275,12 +321,13 @@ class TetMeshGuidanceField : public GuidanceField {
     GetPoint kdGetPoint;
     kdtree_type::OrderedIncrementalTraverse *kdOrderedTraverse;
 
+    vector<real_type> ideal_length;
 };
 
 
 
 void MarchingTets(const TetMesh &mesh, TriangulatorController &tc, real_type isovalue);
-void MarchingTris(const TriangleMesh &mesh, const vector<real_type> &scalar, real_type isovalue,
+void MarchingTris(const TriangleMesh &mesh, const TetMeshProjector &tm, const vector<real_type> &scalar, real_type isovalue,
 		  vector< vector<Point3> > &paths);
 
 bool ProjectToIntersection(const SurfaceProjector  &surf1, const SurfaceProjector &surf2,

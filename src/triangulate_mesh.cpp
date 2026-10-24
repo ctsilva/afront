@@ -1,20 +1,38 @@
 
+/*
+
+Copyright 2007 University of Utah
+
+
+This file is part of Afront.
+
+Afront is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published
+by the Free Software Foundation; either version 2 of the License,
+or (at your option) any later version.
+
+Afront is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
+02110-1301, USA
+
+*/
+
+
+
 #include "common.h"
+#include "parallel.h"
 #include "guidance.h"
 #include "triangulator.h"
 #include "triangulate_mesh.h"
-#include "parallel.h"
-#include <sys/time.h>
 
 
 //#define CLOSEST_POINT_PROJECTION
-
-// Timing utility
-static double get_time_seconds() {
-    struct timeval tv;
-    gettimeofday(&tv, NULL);
-    return tv.tv_sec + tv.tv_usec / 1000000.0;
-}
 
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -135,7 +153,7 @@ class Quadratic {
 };
 
 
-real_type edge_curvature(const vector<Point3> &points, const vector<real_type> &weights) {
+real_type edge_curvature(const vector<Point3> &points, const vector<real_type> &weights, int si) {
 
     vector<real_type> ss;
     vector<real_type> xs, ys, zs;
@@ -158,12 +176,12 @@ real_type edge_curvature(const vector<Point3> &points, const vector<real_type> &
 
     Quadratic pcurves[3];
 
-    pcurves[0].fit(ss, xs, weights);
-    pcurves[1].fit(ss, ys, weights);
-    pcurves[2].fit(ss, zs, weights);
+    if (!pcurves[0].fit(ss, xs, weights)) return 0;
+    if (!pcurves[1].fit(ss, ys, weights)) return 0;
+    if (!pcurves[2].fit(ss, zs, weights)) return 0;
 
 
-    real_type s = ss[points.size()/2];
+    real_type s = ss[si];
 
     Vector3 qd(pcurves[0].eval1(s), pcurves[1].eval1(s), pcurves[2].eval1(s));
     Vector3 qdd(pcurves[0].eval2(s), pcurves[1].eval2(s), pcurves[2].eval2(s));
@@ -171,7 +189,6 @@ real_type edge_curvature(const vector<Point3> &points, const vector<real_type> &
     real_type k = qd.cross(qdd).length() / gtb::ipow(qd.length(), 3);
     return k;
 }
-
 
 
 
@@ -225,7 +242,7 @@ int MeshProjector::ProjectPoint(const Point3 &fp, Point3 &tp, Vector3 &tn) const
 
 
 
-int MeshProjector::ProjectPoint(const FrontElement &base1, const FrontElement &base2, const Point3 &fp, const Vector3 &fn, Point3 &tp, Vector3 &tn) const {
+int MeshProjector::ProjectPoint(const FrontElement &base1, const FrontElement &base2, const Point3 &fp, const Vector3 &fn, Point3 &tp, Vector3 &tn, real_type *curvature) const {
 
 #ifdef CLOSEST_POINT_PROJECTION
     return ProjectPointClosest(fp, tp, tn);
@@ -241,7 +258,7 @@ int MeshProjector::ProjectPoint(const FrontElement &base1, const FrontElement &b
 
     Vector3 extremes;
     for (int i=0; i<3; i++) {
-	extremes[i] = fabs(rad * cos(M_PI/2 - acos(axis[i]))) + 1e-5;
+		extremes[i] = fabs(rad * cos(M_PI/2 - acos(axis[i]))) + 1e-5;
     }
 
     Box3 ringbox(center-extremes, center+extremes);
@@ -255,58 +272,60 @@ int MeshProjector::ProjectPoint(const FrontElement &base1, const FrontElement &b
 
     for (unsigned i=0; i<possible_intersects.size(); i++) {
 
-	const TriangleMeshFace &f = mesh.faces[possible_intersects[i]];
-	Triangle3 tri(mesh.verts[f.verts[0]].point, mesh.verts[f.verts[1]].point, mesh.verts[f.verts[2]].point);
+		const TriangleMeshFace &f = mesh.faces[possible_intersects[i]];
+		Triangle3 tri(mesh.verts[f.verts[0]].point, mesh.verts[f.verts[1]].point, mesh.verts[f.verts[2]].point);
 
-	if (tri.area() == 0) continue;
+		if (tri.area() == 0) continue;
 
-	Vector3 fnorm = tri.normal();
+		Vector3 fnorm = tri.normal();
 
-	real_type d = fnorm.dot(center) - fnorm.dot(tri.A());
+		real_type d = fnorm.dot(center) - fnorm.dot(tri.A());
 
-	if (fabs(d) > rad) continue;
+		if (fabs(d) > rad) continue;
 
-	Vector3 v = fnorm.cross(axis);
-	v.normalize();
+		Vector3 v = fnorm.cross(axis);
+		v.normalize();
 
-	real_type x = sqrt(rad*rad - d*d);
+		real_type x = sqrt(rad*rad - d*d);
 
-	for (int j=0; j<2; j++) {
+		for (int j=0; j<2; j++) {
 
-	    Point3 p = center + -d*fnorm + ((j==0)?-x:x) * v;
+			Point3 p = center + -d*fnorm + ((j==0)?-x:x) * v;
 
-	    // see if it's actually inside the triangle
-	    bool inside = true;
-	    for (int k=0; k<3; k++) {
-		if (fnorm.dot((tri[(k+1)%3]-tri[k]).cross(p-tri[k])) < 0) {
-		    inside = false; break;
+			// see if it's actually inside the triangle
+			bool inside = true;
+			for (int k=0; k<3; k++) {
+				if (fnorm.dot((tri[(k+1)%3]-tri[k]).cross(p-tri[k])) < 0) {
+					inside = false; break;
+				}
+			}
+			if (!inside) continue;
+
+			if (axis.dot(fnorm.cross(p-center)) > 0)
+				continue;
+
+			real_type tdist = Point3::distance(p, fp);
+			if (tdist < closest_intersect) {
+				closest_intersect = tdist;
+				tp = p;
+
+				real_type b[3];
+				tri.get_barycentric_coordinates(tp, b[0], b[1], b[2]);
+
+				tn = Vector3(0,0,0);
+				tn += b[0] * mesh.verts[f.verts[0]].normal;
+				tn += b[1] * mesh.verts[f.verts[1]].normal;
+				tn += b[2] * mesh.verts[f.verts[2]].normal;
+				tn.normalize();
+			}
+
 		}
-	    }
-	    if (!inside) continue;
-
-	    if (axis.dot(fnorm.cross(p-center)) > 0)
-		continue;
-
-	    real_type tdist = Point3::distance(p, fp);
-	    if (tdist < closest_intersect) {
-		closest_intersect = tdist;
-		tp = p;
-
-		real_type b[3];
-		tri.get_barycentric_coordinates(tp, b[0], b[1], b[2]);
-
-		tn = Vector3(0,0,0);
-		tn += b[0] * mesh.verts[f.verts[0]].normal;
-		tn += b[1] * mesh.verts[f.verts[1]].normal;
-		tn += b[2] * mesh.verts[f.verts[2]].normal;
-		tn.normalize();
-	    }
-
-	}
 
     }
 
-    return PROJECT_SUCCESS;
+	if (closest_intersect < 1e30)
+		return PROJECT_SUCCESS;
+	return PROJECT_FAILURE;
 
 #endif
 
@@ -563,11 +582,7 @@ real_type SubdivCurvature(const Point3 &_center, const vector<Point3> &_ring, bo
     double k1, k2;
     poly.curvatures(0,0,k1,k2);
 
-    extern real_type saliency;
-    if (saliency==0)
 	return k2;
-    else
-	return 0.5*(k1+k2);
 }
 
 
@@ -594,29 +609,7 @@ void SolveNormalEquations(const AMat &nA, const AVec &nB, gtb::AVec<double> &x) 
     }
 
     x.resize(b.size());
-    try {
-        SVDSolve(A, b, x);
-    } catch (const std::runtime_error& e) {
-        // SVD failed to converge - use small positive curvature as fallback
-        // This gives reasonable edge lengths rather than infinite
-        static int warn_count = 0;
-        if (warn_count++ < 5) {
-            fprintf(stderr, "WARNING: SVD convergence failure, using moderate curvature estimate\n");
-        }
-        for (int i = 0; i < x.size(); i++) {
-            x[i] = 0.0;
-        }
-        // Set small positive curvature  (x[0] + x[2] terms)
-        x[0] = 0.1;  // moderate curvature
-        x[2] = 0.1;
-    } catch (...) {
-        fprintf(stderr, "WARNING: Unknown exception in SVD, using moderate curvature estimate\n");
-        for (int i = 0; i < x.size(); i++) {
-            x[i] = 0.0;
-        }
-        x[0] = 0.1;
-        x[2] = 0.1;
-    }
+    SVDSolve(A, b, x);
 }
 
 
@@ -659,16 +652,10 @@ real_type ExtendedQuadricCurvature(const Point3 &center, const vector<Point3> &p
 
     double descrim = std::max(0.0, (x[0]-x[2])*(x[0]-x[2]) + x[1]*x[1]);
 
-    extern real_type saliency;
-    if (saliency==0) {
 	if (x[0]+x[2] > 0)
 	    return (real_type)(x[0] + x[2] + sqrt(descrim));
 	else
 	    return (real_type)(x[0] + x[2] - sqrt(descrim));
-    } else {
-	return ((real_type)(x[0] + x[2] + sqrt(descrim)) +
-		(real_type)(x[0] + x[2] - sqrt(descrim))) / 2;
-    }
 }
 
 
@@ -678,12 +665,11 @@ real_type ExtendedQuadricCurvature(const Point3 &center, const vector<Point3> &p
 
 
 MeshGuidanceField::~MeshGuidanceField() {
-    if (kdOrderedTraverse)		delete kdOrderedTraverse;
     delete kdtree;
 }
 
 MeshGuidanceField::MeshGuidanceField(int curv_sub, const TriangleMesh &mesh, real_type rho, real_type min_step, real_type max_step, real_type reduction)
-    : GuidanceField(rho, min_step, max_step, reduction), kdGetPoint(mesh), kdOrderedTraverse(NULL) {
+    : GuidanceField(rho, min_step, max_step, reduction), kdGetPoint(mesh) {
 
 
     // setup the kdtree
@@ -702,8 +688,6 @@ MeshGuidanceField::MeshGuidanceField(int curv_sub, const TriangleMesh &mesh, rea
 	cmesh.LoopSubdivide();
     }
 
-    double curvature_start = get_time_seconds();
-    cerr << "[TIMING] Computing curvature for " << mesh.verts.size() << " vertices..." << endl;
 
     for (unsigned v=0; v<mesh.verts.size(); v++) {
 
@@ -729,12 +713,20 @@ MeshGuidanceField::MeshGuidanceField(int curv_sub, const TriangleMesh &mesh, rea
 	for (unsigned r=0; r<rings.size(); r++) {
 	    for (std::set<int>::iterator i=rings[r].begin(); i!=rings[r].end(); ++i) {
 		nbrhood.push_back(cmesh.verts[*i].point);
-		normest += cmesh.verts[*i].normal;
+
+		if (cmesh.verts[*i].normal.length() > 0.5)
+			normest += cmesh.verts[*i].normal;
 	    }
 	}
 	normest.normalize();
 
-	real_type kmax = ExtendedQuadricCurvature(cmesh.verts[v].point, nbrhood, normest);
+
+	real_type kmax;
+	if (normest.length() > 0.5)
+	    kmax = ExtendedQuadricCurvature(cmesh.verts[v].point, nbrhood, normest);
+	else 
+		kmax = 0;
+
 
 	if (cmesh.VertOnBoundary(v)) {
 
@@ -769,7 +761,7 @@ MeshGuidanceField::MeshGuidanceField(int curv_sub, const TriangleMesh &mesh, rea
 	    }
 
 
-	    double k = edge_curvature(epts, weights);
+	    double k = edge_curvature(epts, weights, epts.size()/2);
 
 	    if (fabs(k) > fabs(kmax))
 		kmax = k;
@@ -787,255 +779,54 @@ MeshGuidanceField::MeshGuidanceField(int curv_sub, const TriangleMesh &mesh, rea
     }
     cerr << std::endl;
 
-    double curvature_elapsed = get_time_seconds() - curvature_start;
-    cerr << "[TIMING] Curvature computation completed in " << curvature_elapsed << " seconds ("
-         << (mesh.verts.size() / curvature_elapsed) << " verts/sec)" << endl;
 
-    vector<int> marked; // for removal
-    Trim(marked);
+	int num_orig = ideal_length.size();
+
+    vector<int> marked(ideal_length.size()); // for removal
+    Trimmer<GetPointMesh> trimmer(*this, kdGetPoint, ideal_length);
+    trimmer.Trim(marked);
+
 
     // rebuild the kdtree
     delete kdtree;
 
+	int num_trimmed = 0;
     kdtree = new kdtree_type(10, mesh.bounding_box(), kdGetPoint);
     for (unsigned i=0; i<mesh.verts.size(); i++) {
-	if (!marked[i])
-	    kdtree->Insert(i, false);
+		if (!marked[i]) {
+			kdtree->Insert(i, false);
+			num_trimmed++;
+		}
     }
     kdtree->MakeTree();
 
-
-
-
-#if 0
-    extern real_type saliency;
-    if (saliency > 0)
-	MeanCurvaturesToSaliency(saliency * Point3::distance(kdGetPoint.mesh.bounding_box().min_point(),
-							     kdGetPoint.mesh.bounding_box().max_point()));
-
-
-
-    if (0) {
-	dbgClear();
-
-
-	real_type max_saliency = max_element(curv_radius);
-	real_type min_saliency = min_element(curv_radius);
-
-	if (1) {
-
-	    vector<real_type> sorted = curv_radius;
-	    std::sort(sorted.begin(), sorted.end());
-
-	    min_saliency = sorted[100];
-	    max_saliency = sorted[sorted.size()-100];
-
-	}
-
-
-	std::swap(min_saliency, max_saliency);
-	min_saliency = 1/min_saliency;
-	max_saliency = 1/max_saliency;
-
-	cerr<<"max: "<<max_saliency<<endl;
-	cerr<<"min: "<<min_saliency<<endl;
-
-
-	for (unsigned f=0; f<kdGetPoint.mesh.faces.size(); f++) {
-	    Point3 p[3];
-	    Point3 c[3];
-
-	    for (int i=0; i<3; i++) {
-		p[i] = kdGetPoint.mesh.verts[kdGetPoint.mesh.faces[f].verts[i]].point;
-		real_type saliency = 1/curv_radius[kdGetPoint.mesh.faces[f].verts[i]];
-
-		saliency = (saliency-min_saliency) / (max_saliency -min_saliency);
-		//		cerr<<"saliency "<<saliency<<endl;
-		c[i] = Point3(saliency, 0, 1-saliency);
-	    }
-
-	    DbgPoly::add(p[0], c[0], p[1], c[1], p[2], c[2]);
-
-	}
-
-	redrawAndWait(' ', true);
-    }
-
-#endif
+	
+	cerr<<num_orig<<" original guidance field points"<<endl;
+	cerr<<num_trimmed<<" guidance field points after trimming"<<endl;
 }
 
 
 
-// this has been moved from guidance.cpp here so we can make it parallel
-// the standard guidance interface for range queries is not threadsafe
-const int num_levels = 5;
-void MeshGuidanceField::MeanCurvaturesToSaliencyParallel(int nt, int id, real_type rad, const real_type rads[], vector<real_type> ave_curvatures[][2]) {
-#if 0
-    for (unsigned i=id; i<curv_radius.size(); i+=nt) {
+void* MeshGuidanceField::OrderedPointTraverseStart(const Point3 &p) {
 
-	real_type wsum[num_levels][2];
-	for (int j=0; j<num_levels; j++) {
-	    wsum[j][0] = 0;	            wsum[j][1] = 0;
-	    ave_curvatures[j][0][i] = 0;    ave_curvatures[j][1][i] = 0;
-	}
-
-	kdtree_type::OrderedIncrementalTraverse traverse(*kdtree, PointLocation(i));
-	while (1) {
-
-	    real_type squared_dist;
-	    if (traverse.empty()) break;
-	    int next = traverse.GetNext(squared_dist);
-
-	    if (squared_dist > square(2*rad*rads[num_levels-1])) break;
-
-	    for (int j=0; j<num_levels; j++) {
-		real_type weight1 = exp(-squared_dist / (2*square(rad*1*rads[j])));
-		real_type weight2 = exp(-squared_dist / (2*square(rad*2*rads[j])));
-
-		ave_curvatures[j][0][i] += weight1 / curv_radius[next];
-		ave_curvatures[j][1][i] += weight2 / curv_radius[next];
-
-		wsum[j][0] += weight1;
-		wsum[j][1] += weight2;
-	    }
-	}
-
-	for (int j=0; j<num_levels; j++) {
-	    ave_curvatures[j][0][i] /= wsum[j][0];
-	    ave_curvatures[j][1][i] /= wsum[j][1];
-
-	    if (ave_curvatures[j][0][i] != ave_curvatures[j][0][i])
-		ave_curvatures[j][0][i] = 0;
-	    if (ave_curvatures[j][1][i] != ave_curvatures[j][1][i])
-		ave_curvatures[j][1][i] = 0;
-	}
-
-
-	if ((int)(i * 100.0 / curv_radius.size()) != (int)((i+1) * 100.0 / curv_radius.size())) {
-	    cerr<<"                  \r"<<((int)((i+1) * 100.0 / curv_radius.size()))<<"%"<<std::flush;\
-	}
-    }
-#endif
+	//    kdtree_type::OrderedIncrementalTraverse *kdOrderedTraverse = 
+	return new kdtree_type::OrderedIncrementalTraverse(*kdtree, p);
+	
 }
 
+bool MeshGuidanceField::OrderedPointTraverseNext(void *ctx, real_type &squared_dist, Point3 &point, real_type &ideal) {
 
-
-void MeshGuidanceField::MeanCurvaturesToSaliency(real_type rad) {
-#if 0
-    cerr<<"computing saliency..."<<endl;
-
-
-    const real_type rads[num_levels] = { 1, 2, 3, 4, 5 };  // * rad
-
-    vector<real_type> ave_curvatures[num_levels][2];
-    for (int i=0; i<num_levels; i++) {
-	ave_curvatures[i][0].resize(curv_radius.size());
-	ave_curvatures[i][1].resize(curv_radius.size());
-    }
-
-
-    ParallelExecutor(idealNumThreads, 
-		     makeClassFunctor(this, 
-				      &MeshGuidanceField::MeanCurvaturesToSaliencyParallel),
-		     rad,
-		     rads,
-		     ave_curvatures);
-
-
-    // compute the saliency
-    vector<real_type> saliency_levels[num_levels];
-    for (int j=0; j<num_levels; j++) {
-	saliency_levels[j].resize(curv_radius.size());
-	forvec(i, curv_radius) {
-	    saliency_levels[j][i] = fabs(ave_curvatures[j][1][i] - ave_curvatures[j][0][i]);
-	}
-    }
-
-
-
-    // weird scales / normalization
-    vector<real_type> maximas[num_levels];
-    for (unsigned v=0; v<kdGetPoint.mesh.verts.size(); v++ ) {
-
-	bool ismax[num_levels];
-	for (int i=0; i<num_levels; i++) ismax[i]=true;
-
-	for (TriangleMesh::VertexVertexIteratorI vi(kdGetPoint.mesh, v); !vi.done(); ++vi) {
-	    for (int j=0; j<num_levels; j++) {
-		if (saliency_levels[j][v] <= saliency_levels[j][*vi])
-		    ismax[j] = false;
-	    }
-	}
-
-	for (int j=0; j<num_levels; j++) {
-	    if (ismax[j])
-		maximas[j].push_back(saliency_levels[j][v]);
-	}
-    }
-
-    for (int j=0; j<num_levels; j++) {
-	real_type m = max_element(saliency_levels[j]);
-	real_type mbar = 0;
-	forvec(i, maximas[j]) {
-	    mbar += maximas[j][i];
-	}
-       	mbar = maximas[j].size()<=1 ? 0 : (mbar-m) / (maximas[j].size()-1);
-
-	real_type scale = square(m-mbar) / m;
-	cerr<<"scale: "<<scale<<endl;
-	forvec(i, saliency_levels[j]) {
-	    saliency_levels[j][i] *= scale;
-	}
-    }
-    
-
-
-    for (unsigned i=0; i<curv_radius.size(); i++) {
-	curv_radius[i] = 0;
-	for (int j=0; j<num_levels; j++) {
-	    curv_radius[i] += saliency_levels[j][i];
-	}
-	curv_radius[i] /= num_levels;
-
-	// add small epsilon just so it's not == 0
-	curv_radius[i] = fabs(curv_radius[i])+1e-30;
-	if (curv_radius[i] == 0)
-	    cerr<<"aoeu"<<endl;
-	curv_radius[i] = 25.0 * pow(curv_radius[i], -1.0);
-    }
-#endif
+	kdtree_type::OrderedIncrementalTraverse *kdOrderedTraverse = (kdtree_type::OrderedIncrementalTraverse*)ctx;
+    if (kdOrderedTraverse->empty()) return false;
+    int n = kdOrderedTraverse->GetNext(squared_dist);
+    point = kdGetPoint(n);
+    ideal = ideal_length[n];
+    return true;
 }
 
-
-int MeshGuidanceField::ClosestPoint(const Point3 &p) {
-    return kdtree->FindMin(p);
-}
-
-
-void MeshGuidanceField::OrderedPointTraverseStart(const Point3 &p) {
-
-    if (kdOrderedTraverse)
-	delete kdOrderedTraverse;
-    kdOrderedTraverse = new kdtree_type::OrderedIncrementalTraverse(*kdtree, p);
-}
-
-int MeshGuidanceField::OrderedPointTraverseNext(real_type &squared_dist) {
-    if (kdOrderedTraverse->empty()) return -1;
-    return kdOrderedTraverse->GetNext(squared_dist);
-}
-
-void MeshGuidanceField::OrderedPointTraverseEnd() {
+void MeshGuidanceField::OrderedPointTraverseEnd(void *ctx) {
+	kdtree_type::OrderedIncrementalTraverse *kdOrderedTraverse = (kdtree_type::OrderedIncrementalTraverse*)ctx;
     delete kdOrderedTraverse;
-    kdOrderedTraverse = NULL;
-}
-
-
-const Point3& MeshGuidanceField::PointLocation(int i) const {
-    return kdGetPoint(i);
-}
-
-int MeshGuidanceField::NumPoints() const {
-    return (int)kdGetPoint.mesh.verts.size();
 }
 
 

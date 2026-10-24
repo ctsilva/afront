@@ -1,10 +1,36 @@
 
+/*
+
+Copyright 2007 University of Utah
+
+
+This file is part of Afront.
+
+Afront is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published
+by the Free Software Foundation; either version 2 of the License,
+or (at your option) any later version.
+
+Afront is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
+02110-1301, USA
+
+*/
+
+
+
 #include "common.h"
+#include "parallel.h"
 #include "guidance.h"
 #include "triangulator.h"
 #include "triangulate_mesh.h"
 #include "triangulate_tet.h"
-#include "parallel.h"
 
 #include <lib/mlslib/NR/nr.h>	// for zbrent?!?!?
 
@@ -24,7 +50,7 @@ const int desired_knn = 250;
 //const int desired_knn = 500;
 const real_type cache_overestimate = 1.05;
 
-const int nielson_gradient_smoothpasses = 1;
+const int nielson_gradient_smoothpasses = 3;
 
 typedef long double projection_type;
 typedef long double eval_type;
@@ -483,7 +509,7 @@ real_type TetMeshProjector::TetBaryInterp(int t, const Point3 &x, real_type f0, 
 
 
 
-int TetMeshProjector::ProjectPoint(const FrontElement &base1, const FrontElement &base2, const Point3 &fp, const Vector3 &fn, Point3 &tp, Vector3 &tn) const {
+int TetMeshProjector::ProjectPoint(const FrontElement &base1, const FrontElement &base2, const Point3 &fp, const Vector3 &fn, Point3 &tp, Vector3 &tn, real_type *curvature) const {
 
 #ifdef TET_CIRCULAR_PROJECTION
 
@@ -1153,7 +1179,7 @@ bool TetMeshProjectorNielson::CurvatureAtPoint(const Point3 &p, real_type &k1, r
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-void TetMeshProjectorMLS::SetRadiusParallel(int nt, int id) {
+void TetMeshProjectorMLS::SetRadiusParallel(int nt, int id, CSObject &cs) {
 
 
     for (int v=id; v<kdGetPoint.NumPoints(); v+=nt) {
@@ -1733,7 +1759,7 @@ void TetMeshProjectorMLS::StartRingProjection(const Point3 &p, vector<int> &nbrs
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-void MeshPointScalarEvalParallel(int nt, int id, const TetMeshProjector &tmp, const TetMesh &mesh, vector<real_type> &scalars) {
+void MeshPointScalarEvalParallel(int nt, int id, CSObject &cs, const TetMeshProjector &tmp, const TetMesh &mesh, vector<real_type> &scalars) {
     for (unsigned v=id; v<mesh.verts.size(); v+=nt) {
 	if (tmp.GetProjectorType() == TetMeshProjector::TET_MESH_PROJECTOR_NIELSON || 
 	    !tmp.EvalAtPoint(mesh.verts[v].point, scalars[v], NULL))
@@ -1743,13 +1769,12 @@ void MeshPointScalarEvalParallel(int nt, int id, const TetMeshProjector &tmp, co
 }
 
 
-void TetMeshGuidanceField::BuildGuidanceParallel(int nt, int id, real_type isovalue, const TetMesh &mesh, const vector<real_type> &scalars) { 
+void TetMeshGuidanceField::BuildGuidanceParallel(int nt, int id, CSObject &cs, real_type isovalue, const TetMesh &mesh, const vector<real_type> &scalars) { 
 
 
     vector<Point3> mypoints;
     vector<Vector3> mynorms;
     vector<real_type> mycurvatures;
-    static thlib::CSObject cs;
 
 
     for (unsigned t=id; t<mesh.tets.size(); t+=nt) {
@@ -1872,8 +1897,9 @@ TetMeshGuidanceField::TetMeshGuidanceField(TetMeshProjector &proj, real_type rho
     kdtree->MakeTree();
 
 
-    vector<int> marked; // for removal
-    Trim(marked);
+    vector<int> marked(ideal_length.size()); // for removal
+    Trimmer<GetPoint> trimmer(*this, kdGetPoint, ideal_length);
+    trimmer.Trim(marked);
 
     vector<Point3> keepers;
     vector<real_type> keep_curv;
@@ -1904,36 +1930,28 @@ TetMeshGuidanceField::~TetMeshGuidanceField() {
 }
 
 
-int TetMeshGuidanceField::ClosestPoint(const Point3 &p) {
-    return kdtree->FindMin(p);
+void* TetMeshGuidanceField::OrderedPointTraverseStart(const Point3 &p) {
+    return new kdtree_type::OrderedIncrementalTraverse(*kdtree, p);
 }
 
-
-void TetMeshGuidanceField::OrderedPointTraverseStart(const Point3 &p) {
-    if (kdOrderedTraverse)
-	delete kdOrderedTraverse;
-    kdOrderedTraverse = new kdtree_type::OrderedIncrementalTraverse(*kdtree, p);
+bool TetMeshGuidanceField::OrderedPointTraverseNext(void *ctx, real_type &squared_dist, Point3 &point, real_type &ideal) {
+	kdtree_type::OrderedIncrementalTraverse *kdOrderedTraverse = (kdtree_type::OrderedIncrementalTraverse*)ctx;
+    if (kdOrderedTraverse->empty()) return false;
+    int n = kdOrderedTraverse->GetNext(squared_dist);
+    point = kdGetPoint(n);
+    ideal = ideal_length[n];
+    return true;
 }
 
-int TetMeshGuidanceField::OrderedPointTraverseNext(real_type &squared_dist) {
-    if (kdOrderedTraverse->empty()) return -1;
-    return kdOrderedTraverse->GetNext(squared_dist);
-}
-
-void TetMeshGuidanceField::OrderedPointTraverseEnd() {
+void TetMeshGuidanceField::OrderedPointTraverseEnd(void *ctx) {
+	kdtree_type::OrderedIncrementalTraverse *kdOrderedTraverse = (kdtree_type::OrderedIncrementalTraverse*)ctx;
     delete kdOrderedTraverse;
-    kdOrderedTraverse = NULL;
 }
 
 
 
 const Point3& TetMeshGuidanceField::PointLocation(int i) const {
     return kdGetPoint(i);
-}
-
-
-int TetMeshGuidanceField::NumPoints() const {
-    return (int)kdGetPoint.allpoints.size();
 }
 
 
@@ -2101,8 +2119,34 @@ void MarchingTets(const TetMesh &mesh, TriangulatorController &tc, real_type iso
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 
-void MarchingTris(const TriangleMesh &mesh, const vector<real_type> &scalar, real_type isovalue,
+class TetLineEval {
+
+    public:
+    TetLineEval(const TetMeshProjector &t, const Point3 &_p0, const Point3 &_p1, real_type iso) :
+		tetmeshproj(t), p0(_p0), p1(_p1), iso_value(iso) {
+	}
+
+    real_type operator()(real_type t) {
+
+		Point3 x = p0 + t*(p1-p0);
+		real_type v;
+		tetmeshproj.EvalAtPoint(x, v, NULL);
+		return v-iso_value;
+    }
+
+        
+    const TetMeshProjector &tetmeshproj;
+    real_type iso_value;
+    Point3 p0;
+    Point3 p1;
+};
+
+
+void MarchingTris(const TriangleMesh &mesh, const TetMeshProjector &tm, const vector<real_type> &scalar, real_type isovalue,
 		  vector< vector<Point3> > &paths) {
+
+
+	bool rootfind = true;
 
     paths.clear();
 
@@ -2150,8 +2194,28 @@ void MarchingTris(const TriangleMesh &mesh, const vector<real_type> &scalar, rea
 		if (dists[i]<0 && dists[(i+1)%3]>0 && dists[(i+2)%3]>0) {
 		    real_type alpha;
 		    alpha = -dists[i] / (dists[(i+2)%3] - dists[i]);
+
+			TetLineEval le(tm,
+						   mesh.verts[mesh.faces[next].verts[i]].point, 
+						   mesh.verts[mesh.faces[next].verts[(i+2)%3]].point, 
+						   isovalue);
+
+			if (rootfind) {
+				extern real_type step_tol;
+				extern real_type value_tol;
+				real_type step = step_tol;
+
+				for (int j=0; j<5; j++) {
+					alpha = NR::zbrent(le, (real_type)0, (real_type)1, step);
+					step *= 0.05;
+					if (fabs(le(alpha)) < value_tol)
+						break;
+				}
+			}
+
 		    paths.back().push_back(mesh.verts[mesh.faces[next].verts[i]].point + 
 					   alpha * (mesh.verts[mesh.faces[next].verts[(i+2)%3]].point - mesh.verts[mesh.faces[next].verts[i]].point));
+
 		    next = mesh.faces[next].nbrs[i];
 		    found=true; break;
 		}
@@ -2159,6 +2223,25 @@ void MarchingTris(const TriangleMesh &mesh, const vector<real_type> &scalar, rea
 		if (dists[i]>0 && dists[(i+1)%3]<0 && dists[(i+2)%3]<0) {
 		    real_type alpha;
 		    alpha = -dists[i] / (dists[(i+1)%3] - dists[i]);
+
+			TetLineEval le(tm,
+						   mesh.verts[mesh.faces[next].verts[i]].point, 
+						   mesh.verts[mesh.faces[next].verts[(i+1)%3]].point, 
+						   isovalue);
+
+			if (rootfind) {
+				extern real_type step_tol;
+				extern real_type value_tol;
+				real_type step = step_tol;
+
+				for (int j=0; j<5; j++) {
+					alpha = NR::zbrent(le, (real_type)0, (real_type)1, step);
+					step *= 0.05;
+					if (fabs(le(alpha)) < value_tol)
+						break;
+				}
+			}
+
 		    paths.back().push_back(mesh.verts[mesh.faces[next].verts[i]].point + 
 					   alpha * (mesh.verts[mesh.faces[next].verts[(i+1)%3]].point - mesh.verts[mesh.faces[next].verts[i]].point));
 		    next = mesh.faces[next].nbrs[(i+2)%3];

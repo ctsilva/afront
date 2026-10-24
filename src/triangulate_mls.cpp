@@ -1,4 +1,31 @@
+
+/*
+
+Copyright 2007 University of Utah
+
+
+This file is part of Afront.
+
+Afront is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published
+by the Free Software Foundation; either version 2 of the License,
+or (at your option) any later version.
+
+Afront is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
+02110-1301, USA
+
+*/
+
+
 #include "common.h"
+#include "parallel.h"
 #include "guidance.h"
 #include "triangulator.h"
 #include "triangulate_mls.h"
@@ -6,10 +33,8 @@
 #include <cstdio>
 #include <algorithm>
 
-#ifdef WIN32
-#define NO_RMLS
-#endif
 
+#define NO_RMLS
 #ifndef NO_RMLS
 #include <rmlslib/Primitive_Functions.h>
 #endif
@@ -32,13 +57,13 @@ SmoothMLSProjector::~SmoothMLSProjector()
 
 int SmoothMLSProjector::ProjectPoint(const Point3 &fp, Point3 &tp, Vector3 &tn) const
 {
-    return (_projector.PowellProject(fp, tp, tn) ? PROJECT_SUCCESS : PROJECT_FAILURE);
+	return (_projector.PowellProject(fp, tp, tn) ? PROJECT_SUCCESS : PROJECT_FAILURE);
 }
 
 int SmoothMLSProjector::ProjectPoint
     (const FrontElement &base1, const FrontElement &base2, 
      const Point3 &fp, const Vector3 &fn,
-     Point3 &tp, Vector3 &tn) const
+     Point3 &tp, Vector3 &tn, real_type *curvature) const
 {
     extern bool rmls;
     if (rmls) {
@@ -65,28 +90,30 @@ int SmoothMLSProjector::ProjectPoint
 
 	// FIXME - is it possible to fail??
 #else
-		cerr<<"no robust mls on windows right now"<<endl;
+		cerr<<"robust mls code not released yet!"<<endl;
+		exit(0);
 #endif
-    } else
-		if (_adamson != 0) {
-	if (!_projector.adamson_projection(fp, tp, tn, _adamson))
-	    return PROJECT_FAILURE;
     } else {
-	if (!_projector.PowellProject(fp, tp, tn))
-	    return PROJECT_FAILURE;
-    }
+		if (_adamson != 0) {
+			if (!_projector.adamson_projection(fp, tp, tn, _adamson))
+				return PROJECT_FAILURE;
+		} else {
+			if (!_projector.PowellProject(fp, tp, tn))
+				return PROJECT_FAILURE;
+		}
+	}
 
     if (fn.dot(tn) < 0)
-	tn.flip();
+		tn.flip();
     if (fn.dot(tn) < 0.7) {
-	cerr << "dUuuuuh" << endl;
-	tn = fn;
+		//		cerr << "dUuuuuh" << endl;
+		tn = fn;
     }
     return PROJECT_SUCCESS;
 }
 
 
-void SmoothMLSGuidanceField::curvatures(const Point3 &ref, Vector3 &normal, real_type &k1, real_type &k2)
+void SmoothMLSGuidanceField::curvatures(const Point3 &ref, Vector3 &normal, real_type &k1, real_type &k2) const
 {
     Point3 result;
     real_type radius = _projector.point_radius(ref);
@@ -108,14 +135,30 @@ void SmoothMLSGuidanceField::curvatures(const Point3 &ref, Vector3 &normal, real
     //	cerr<<k1<<" "<<k2<<endl;
 }
 
+void SmoothMLSGuidanceField::MakeGuidanceParallel(int nt, int id, CSObject &cs, vector<real_type> &ideals) const
+{
+	for (unsigned i=id; i<_projector.get_points().size(); i+=nt) {
+		real_type k1, k2;
+		Vector3 normal;
+		Point3 p = _projector.get_points().vertex(i);
+		curvatures(p, normal, k1, k2);
+
+		ideals[i] = MaxCurvatureToIdeal(k2);
+			
+		if ((int)(i * 100.0 / _projector.get_points().size()) != (int)((i+1) * 100.0 / _projector.get_points().size())) {
+			//			cerr<<"\r          \r"<<((int)((i+1) * 100.0 / _projector.get_points().size()))<<"%";
+			cerr<<".";
+			cerr.flush();
+		}
+	}
+}
+
 SmoothMLSGuidanceField::SmoothMLSGuidanceField
     (CProjection &projector,
      real_type rho, real_type min_step, real_type max_step, real_type reduction, 
-     int adamson, 
-     VectorField field, float field_epsilon):
+     int adamson, const char *gffile) :
 	GuidanceField(rho, min_step, max_step, reduction),
 	_projector(projector),
-	_kdOrderedTraverse(NULL),
 	_adamson(adamson)
 {
     ideal_length.resize(projector.get_points().size());
@@ -123,79 +166,81 @@ SmoothMLSGuidanceField::SmoothMLSGuidanceField
     cerr << projector.get_points().size() << endl;
 
 
-    for (unsigned i=0; i<_projector.get_points().size(); ++i) {
-	real_type k1, k2;
-	Vector3 normal;
-	Point3 p = _projector.get_points().vertex(i);
-	curvatures(p, normal, k1, k2);
-	ideal_length[i] = MaxCurvatureToIdeal(k2);
-	if (field) {
-	    Vector3 grad_f = field(p).normalized();
-	    float s = 1 - normal.dot(grad_f)*normal.dot(grad_f); // s = sin^2(angle(normal, grad_f))
-	    ideal_length[i] *= max(field_epsilon * field_epsilon, s);
+	if (gffile != NULL) {
+		cerr << "reading guidance field from file " << gffile;
+		
+		FILE *gff = fopen(gffile, "r");
+		if (gff == NULL) {
+			cerr << "couldn't open guidance field file " << gffile;
+			exit(0);
+		}
+
+		for (unsigned i=0; i<projector.get_points().size(); i++) {
+			char line[1000];
+			fgets(line, 1000, gff);
+
+			float ideal = 0;
+			sscanf(line, "%g", &ideal);
+			ideal_length[i] = atof(line);
+		}
+
+		fclose(gff);
 	}
-	if ((int)(i * 100.0 / _projector.get_points().size()) != (int)((i+1) * 100.0 / _projector.get_points().size())) {
-	    cerr<<"\r          \r"<<((int)((i+1) * 100.0 / _projector.get_points().size()))<<"%";
-	    cerr.flush();
+
+	else {
+		ParallelExecutor(idealNumThreads, makeClassFunctor(this,&SmoothMLSGuidanceField::MakeGuidanceParallel), ideal_length);
+
+
+		extern int mls_gf_fix;
+		for (int it=0; it<mls_gf_fix; it++) {
+
+			for (int i=0; i<_projector.get_points().size(); i++) {
+				surfelset_view nbhd(_projector.get_points());
+				_projector.extract(_projector.get_points().vertex(i),
+								   ((real_type)1)*_projector.point_radius(_projector.get_points().vertex(i)),
+								   nbhd);
+
+				real_type smallest = INFINITY;
+				for (int j=0; j<nbhd.size(); j++) {
+					if (fabs(ideal_length[nbhd.get_index(j)]) < fabs(smallest))
+						smallest = ideal_length[nbhd.get_index(j)];
+				}
+
+				if (smallest == ideal_length[i])
+					ideal_length[i] = INFINITY;
+			}			
+		}
 	}
-    }
-    cerr << endl;
-}
 
-SmoothMLSGuidanceField::SmoothMLSGuidanceField
-    (CProjection &projector,
-     real_type rho, real_type min_step, real_type max_step, real_type reduction, int adamson, const char *filename):
-	GuidanceField(rho, min_step, max_step, reduction),
-	_projector(projector),
-	_kdOrderedTraverse(NULL),
-	_adamson(adamson)
-{
-    //    curv_radius.resize(projector.get_points().size());
-    //    cerr << projector.get_points().size() << endl;
-
-    LoadField(filename);
-
-    if (ideal_length.size() != projector.get_points().size()) {
-	cerr << "Guidance field size mismatch" << endl;
-	cerr << "There are " << projector.get_points().size() << " points and ";
-	cerr << ideal_length.size() << " entries." << endl;
-	exit(1);
-    } else {
-	cerr << "Loaded curvature field." << endl;
-    }
+	cerr << endl;
 }
 
 SmoothMLSGuidanceField::~SmoothMLSGuidanceField()
 {
 }
 
-int SmoothMLSGuidanceField::ClosestPoint(const Point3 &p) 
-{
-    return _projector.get_kdtree().tree->FindMin(p);
+
+void* SmoothMLSGuidanceField::OrderedPointTraverseStart(const Point3 &p) {
+    return new gtb::ss_kdtree<surfel_set>::t_surfel_tree::OrderedIncrementalTraverse(*_projector.get_kdtree().tree, p);
 }
 
 
-void SmoothMLSGuidanceField::OrderedPointTraverseStart(const Point3 &p)
-{
-    if (_kdOrderedTraverse)
-	delete _kdOrderedTraverse;
-    _kdOrderedTraverse = new gtb::ss_kdtree<surfel_set>::t_surfel_tree::OrderedIncrementalTraverse(*_projector.get_kdtree().tree, p);
+bool SmoothMLSGuidanceField::OrderedPointTraverseNext(void *ctx, real_type &squared_dist, Point3 &point, real_type &ideal) {
+	gtb::ss_kdtree<surfel_set>::t_surfel_tree::OrderedIncrementalTraverse *kdOrderedTraverse = (gtb::ss_kdtree<surfel_set>::t_surfel_tree::OrderedIncrementalTraverse*)ctx;
+
+    if (kdOrderedTraverse->empty()) return false;
+    int n = kdOrderedTraverse->GetNext(squared_dist);
+    point = _projector.get_points().vertex(n);
+    ideal = ideal_length[n];
+    return true;
 }
 
-int SmoothMLSGuidanceField::OrderedPointTraverseNext(real_type &dist) {
-    if (_kdOrderedTraverse->empty()) return -1;
-    return _kdOrderedTraverse->GetNext(dist);
+
+void SmoothMLSGuidanceField::OrderedPointTraverseEnd(void *ctx) {
+	gtb::ss_kdtree<surfel_set>::t_surfel_tree::OrderedIncrementalTraverse *kdOrderedTraverse = (gtb::ss_kdtree<surfel_set>::t_surfel_tree::OrderedIncrementalTraverse*)ctx;
+    delete kdOrderedTraverse;
 }
 
-void SmoothMLSGuidanceField::OrderedPointTraverseEnd() {
-    delete _kdOrderedTraverse;
-    _kdOrderedTraverse = NULL;
-}
-
-const Point3& SmoothMLSGuidanceField::PointLocation(int i) const
-{
-    return _projector.get_points().vertex(i);
-}
 
 void SmoothMLSGuidanceField::Extract(vector<Point3> &pts, vector<Vector3> &norms, vector<real_type> &rad)
 {

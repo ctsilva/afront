@@ -1,3 +1,29 @@
+
+/*
+
+Copyright 2007 University of Utah
+
+
+This file is part of Afront.
+
+Afront is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published
+by the Free Software Foundation; either version 2 of the License,
+or (at your option) any later version.
+
+Afront is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
+02110-1301, USA
+
+*/
+
+
 #ifndef DEBUG_DRAW_H
 #define DEBUG_DRAW_H
 
@@ -45,7 +71,7 @@ public:
     template <class T>
 	static void add(const std::vector<gtb::tPoint3<T> > &p, const std::vector<gtb::tPoint3<T> > &c) 
     { 
-	wins[0].madd(p, c); 
+		add(0,p,c);
     }
 	static void clear(int win) { wins[win].clear(); }
 	static void draw(int win) { wins[win].draw(); }
@@ -68,15 +94,15 @@ private:
 class DbgPLines {
 public:
     template <class T>
-	static void add(int win, const std::vector<gtb::tPoint3<T> > &a, int color=3) { 
+		static void add(int win, const std::vector<gtb::tPoint3<T> > &a, int color=3, int width=1) { 
 	std::vector<gtb::tPoint3<float> > fa;
 	for (unsigned i=0; i<a.size(); ++i)
 	    fa.push_back(gtb::tPoint3<float>(a[i]));
-	wins[win].madd(fa, color); 
+	wins[win].madd(fa, color, width); 
     }
     template <class T>
-	static void add(const std::vector<gtb::tPoint3<T> > &a, int color=3) { 
-	add(0, a, color); 
+		static void add(const std::vector<gtb::tPoint3<T> > &a, int color=3, int width=1) { 
+		add(0, a, color, width); 
     }
 
 	static void clear(int win) { wins[win].clear(); }
@@ -88,7 +114,7 @@ public:
 	    wins[win].translate(gtb::tVector3<float>(t)); 
 	}
 
-	void madd(const std::vector<gtb::tPoint3<float> > &a, int color);
+	void madd(const std::vector<gtb::tPoint3<float> > &a, int color, int width);
     void clear();
     void draw() const;
 	void translate(const gtb::tVector3<float> &t);
@@ -96,6 +122,7 @@ public:
 private:
     std::vector< std::vector<gtb::tPoint3<float> > > lines;
 	std::vector<int> color;
+	std::vector<int> width;
 	static DbgPLines wins[2];
 };
 

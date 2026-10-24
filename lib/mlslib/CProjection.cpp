@@ -1,5 +1,31 @@
-#include "stdafx.h"
+
+/*
+
+Copyright 2007 University of Utah
+
+
+This file is part of Afront.
+
+Afront is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published
+by the Free Software Foundation; either version 2 of the License,
+or (at your option) any later version.
+
+Afront is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
+02110-1301, USA
+
+*/
 #include <cmath>
+
+
+#include "stdafx.h"
 #include <gtb/gtb.hpp>
 #include <stat/stat.h>
 #include "NR/nr.h"
@@ -230,7 +256,6 @@ T CProjection<REAL>::adamson_eval(const surfelset_view &nbhd, const gtb::tPoint3
 //		for (int j=0; j<3; j++)
 //			cv[j] = sqrt(cv[j]); // * iwsum);	// really need the iwsum scale??
 
-
 		T **a = NR::amatrix<T>(1,3, 1,3);
 		T **v = NR::amatrix<T>(1,3, 1,3);
 		for (int r=0; r<3; r++) {
@@ -248,9 +273,9 @@ T CProjection<REAL>::adamson_eval(const surfelset_view &nbhd, const gtb::tPoint3
 		int min = (fabs(d[0]) < fabs(d[1])) ? 0 : 1;
 		if (fabs(d[2]) < fabs(d[min])) min = 2;
 
-		norm[0] = v[0][min+1];
-		norm[1] = v[1][min+1];
-		norm[2] = v[2][min+1];
+		norm[0] = v[0+1][min+1];
+		norm[1] = v[1+1][min+1];
+		norm[2] = v[2+1][min+1];
 
 	} else {
 		// weighted average of normals
@@ -290,6 +315,22 @@ bool CProjection<REAL>::adamson_projection(surfelset_view& nbhd, const Point3& r
 		Grad13 e = adamson_eval(nbhd, p, radius, style);
 
 		double step = -e.value / (e.gradient[0]*e.gradient[0] + e.gradient[1]*e.gradient[1] + e.gradient[2]*e.gradient[2]);
+
+		areal vals[2];
+		for (int i=0; i<2; i++) {
+
+			int dir[2] = {1,-1};
+
+			Point3 tr = r1;
+			tr[0] += (areal)(dir[i]*step*e.gradient[0]);
+			tr[1] += (areal)(dir[i]*step*e.gradient[1]);
+			tr[2] += (areal)(dir[i]*step*e.gradient[2]);
+
+			vals[i] = adamson_eval(nbhd, tr, radius, style);
+		}
+
+		// if (fabs(vals[0]) > fabs(vals[1]))
+		// 	step = -step;
 
 		r1[0] += (areal)(step*e.gradient[0]);
 		r1[1] += (areal)(step*e.gradient[1]);

@@ -1,24 +1,43 @@
 
+/*
+
+Copyright 2007 University of Utah
+
+
+This file is part of Afront.
+
+Afront is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published
+by the Free Software Foundation; either version 2 of the License,
+or (at your option) any later version.
+
+Afront is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
+02110-1301, USA
+
+*/
+
+
+
 #include "common.h"
+#include "parallel.h"
 #include "edgeflipper.h"
-
-
-bool OutputControllerEdgeFlipper::DoFlips = false;
 
 
 
 void OutputControllerEdgeFlipper::AddVertex(int index, const Point3 &p, const Vector3 &n, bool boundary) {
 
-    if (!DoFlips) {
-	child->AddVertex(index, p, n, boundary);
-	return;
-    }
-
-
     int vil = AllocVert();
     EdgeFlipperVertex &v = verts[vil];
     v.index = index;
     v.boundary = boundary;
+    v.onfront = true;
     v.incidentTriangles.clear();
     v.incidentVerticesLocal.clear();
     v.incidentVerticesGlobal.clear();
@@ -33,15 +52,44 @@ void OutputControllerEdgeFlipper::AddVertex(int index, const Point3 &p, const Ve
 }
 
 
-void OutputControllerEdgeFlipper::AddTriangle(int index, int v1, int v2, int v3) {
+void OutputControllerEdgeFlipper::FinalizeVertex(int index) {
+    int lindex = global_to_local_vi[index];
+    verts[lindex].onfront = false;
 
 
+    // figure out which verts are ready to remove
+    // this stuff could probably be fancier
+    std::set<int> prv;
+    if (VertexRemovable(lindex))
+		prv.insert(lindex);
 
-    if (!DoFlips) {
-	child->AddTriangle(index, v1, v2, v3);
-	return;
+    for (std::set<int>::iterator vi=verts[lindex].incidentVerticesLocal.begin();
+		 vi!=verts[lindex].incidentVerticesLocal.end();
+		 ++vi) {
+	
+		if (VertexRemovable(*vi)) {
+			prv.insert(*vi);
+		}
+    }
+    
+    
+    vector<int> remove_verts;
+    for (std::set<int>::iterator i=prv.begin(); i!=prv.end(); ++i) {
+		if (VertexRemovable(*i)) {
+			remove_verts.push_back(*i);
+		}
     }
 
+	DoEdgeFlips(remove_verts);
+
+
+    for (unsigned i=0; i<remove_verts.size(); i++) {
+		if (!verts[remove_verts[i]].boundary)
+			FinishVertex(remove_verts[i]);
+    }
+}
+
+void OutputControllerEdgeFlipper::AddTriangle(int index, int v1, int v2, int v3) {
 
     int til = AllocTri();
     EdgeFlipperTriangle &t = tris[til];
@@ -55,79 +103,48 @@ void OutputControllerEdgeFlipper::AddTriangle(int index, int v1, int v2, int v3)
     // add incident edges and the new triangle
     int gvi[3] = { v1, v2, v3 };
     for (int i=0; i<3; i++) {
-	EdgeFlipperVertex &v = verts[t.vi[i]];
-	v.incidentTriangles.insert(til);
-	v.incidentVerticesLocal.insert(t.vi[(i+1)%3]);
-	v.incidentVerticesLocal.insert(t.vi[(i+2)%3]);
-	v.incidentVerticesGlobal.insert(gvi[(i+1)%3]);
-	v.incidentVerticesGlobal.insert(gvi[(i+2)%3]);
+		EdgeFlipperVertex &v = verts[t.vi[i]];
+		v.incidentTriangles.insert(til);
+		v.incidentVerticesLocal.insert(t.vi[(i+1)%3]);
+		v.incidentVerticesLocal.insert(t.vi[(i+2)%3]);
+		v.incidentVerticesGlobal.insert(gvi[(i+1)%3]);
+		v.incidentVerticesGlobal.insert(gvi[(i+2)%3]);
     }
 
+    vector<int> flipverts;
+	flipverts.push_back(t.vi[0]);
+	flipverts.push_back(t.vi[1]);
+	flipverts.push_back(t.vi[2]);
 
-    // figure out which verts are ready to remove
-    // this stuff could probably be fancier
-    std::set<int> prv;
-    for (int i=0; i<3; i++) {
-	
-	for (std::set<int>::iterator vi=verts[t.vi[i]].incidentVerticesLocal.begin();
-	     vi!=verts[t.vi[i]].incidentVerticesLocal.end();
-	     ++vi) {
-	    
-	    if (VertexRemovable(*vi)) {
-		prv.insert(*vi);
-	    }
-	}
-    }
-    
-    
-    vector<int> remove_verts;
-    for (std::set<int>::iterator i=prv.begin(); i!=prv.end(); ++i) {
-	if (VertexRemovable(*i)) {
-	    remove_verts.push_back(*i);
-	}
-    }
-    
-    
-    DoEdgeFlips(remove_verts);
-	
-
-    for (unsigned i=0; i<remove_verts.size(); i++) {
-	if (!verts[remove_verts[i]].boundary)
-	    FinishVertex(remove_verts[i]);
-    }
+	DoEdgeFlips(flipverts);
 }
 
 
 void OutputControllerEdgeFlipper::Finish() {
 
-    if (!DoFlips) {
-	child->Finish();
-	return;
-    }
-
     for (unsigned t=0; t<tris.size(); t++) {
-	bool used=true;
-	for (unsigned i=0; i<available_tris.size(); i++) {
-	    if (available_tris[i] == t) {
-		used = false;
-		break;
-	    }
-	}
+		bool used=true;
+		for (unsigned i=0; i<available_tris.size(); i++) {
+			if (available_tris[i] == t) {
+				used = false;
+				break;
+			}
+		}
 
-	if (used) {
-
-	    if (verts[tris[t].vi[0]].index != verts[tris[t].vi[1]].index &&
-		verts[tris[t].vi[1]].index != verts[tris[t].vi[2]].index &&
-		verts[tris[t].vi[2]].index != verts[tris[t].vi[0]].index)
-
-		child->AddTriangle(tris[t].index,
-				   verts[tris[t].vi[0]].index,
-				   verts[tris[t].vi[1]].index,
-				   verts[tris[t].vi[2]].index);
-	}
+		if (used) {
+			
+			if (verts[tris[t].vi[0]].index != verts[tris[t].vi[1]].index &&
+				verts[tris[t].vi[1]].index != verts[tris[t].vi[2]].index &&
+				verts[tris[t].vi[2]].index != verts[tris[t].vi[0]].index)
+				
+				child->AddTriangle(tris[t].index,
+								   verts[tris[t].vi[0]].index,
+								   verts[tris[t].vi[1]].index,
+								   verts[tris[t].vi[2]].index);
+		}
     }
 
-
+	
     tris.clear();
     verts.clear();
     available_tris.clear();
@@ -145,27 +162,27 @@ real_type angle(Point3 &a, Point3 &b, Point3 &c) {
 bool OutputControllerEdgeFlipper::ShouldFlip(int va, int vb, int vc, int vd) const {
 
     Point3 pts[4] = { verts[va].position, 
-		      verts[vb].position, 
-		      verts[vc].position, 
-		      verts[vd].position };
+					  verts[vb].position, 
+					  verts[vc].position, 
+					  verts[vd].position };
 
     real_type curmin = std::min(std::min(angle(pts[0], pts[1], pts[2]),
-				std::min(angle(pts[1], pts[2], pts[0]),
-					 angle(pts[2], pts[0], pts[1]))),
-				std::min(angle(pts[3], pts[1], pts[2]),
-				std::min(angle(pts[1], pts[2], pts[3]),
-					 angle(pts[2], pts[3], pts[1]))));
+										 std::min(angle(pts[1], pts[2], pts[0]),
+												  angle(pts[2], pts[0], pts[1]))),
+								std::min(angle(pts[3], pts[1], pts[2]),
+										 std::min(angle(pts[1], pts[2], pts[3]),
+												  angle(pts[2], pts[3], pts[1]))));
 
     real_type flipmin= std::min(std::min(angle(pts[0], pts[1], pts[3]),
-				std::min(angle(pts[1], pts[3], pts[0]),
-					 angle(pts[3], pts[0], pts[1]))),
-				std::min(angle(pts[3], pts[2], pts[0]),
-				std::min(angle(pts[2], pts[0], pts[3]),
-					 angle(pts[0], pts[3], pts[2]))));
+										 std::min(angle(pts[1], pts[3], pts[0]),
+												  angle(pts[3], pts[0], pts[1]))),
+								std::min(angle(pts[3], pts[2], pts[0]),
+										 std::min(angle(pts[2], pts[0], pts[3]),
+												  angle(pts[0], pts[3], pts[2]))));
 
 
     if (flipmin < curmin) {
-	return false;
+		return false;
     }
 
 
@@ -175,19 +192,24 @@ bool OutputControllerEdgeFlipper::ShouldFlip(int va, int vb, int vc, int vd) con
     Vector3 nn1 = (pts[3]-pts[1]).cross(pts[0]-pts[1]);
     Vector3 nn2 = (pts[0]-pts[2]).cross(pts[3]-pts[2]);
 
-
     real_type old_area = on1.length()+on2.length();
     real_type new_area = nn1.length()+nn2.length();
 
 
-    if (new_area < 1.1*old_area)
-	return false;
+	if (new_area > 1.1*old_area)
+	 	return false;
 
-    if (on1.dot(nn1)<0 || on1.dot(nn2)<0)
-	return false;
+    // on1.normalize();
+    // on2.normalize();
+    // nn1.normalize();
+    // nn2.normalize();
 
-    if (on2.dot(nn1)<0 || on2.dot(nn2)<0)
-	return false;
+    // const real_type min_dot=0;
+    // if (on1.dot(nn1)<min_dot || on1.dot(nn2)<min_dot)
+	// return false;
+
+    // if (on2.dot(nn1)<min_dot || on2.dot(nn2)<min_dot)
+	// return false;
 
 
     return true;
@@ -238,16 +260,19 @@ bool OutputControllerEdgeFlipper::TryFlip(int v1, int v2) {
 	return false;
     }
 
+
     int nbound=0;
     if (verts[v1].boundary) nbound++;
     if (verts[v2].boundary) nbound++;
     if (verts[o1].boundary) nbound++;
     if (verts[o2].boundary) nbound++;
 
-    if (nbound >= 1) {
-	return false;
-    }
-
+	// make sure not to flip it if it's a boundary edge
+    // if (nbound >= 1) {
+	// return false;
+    // }
+	if (verts[v1].boundary && verts[v2].boundary)
+		return false;
 
 
     if (!ShouldFlip(o1, v2, v1, o2))
@@ -371,7 +396,6 @@ void OutputControllerEdgeFlipper::DoEdgeFlips(const vector<int> &rv) {
 
 void OutputControllerEdgeFlipper::Draw() {
 
-    dbgClear();
 
     for (unsigned t=0; t<tris.size(); t++) {
 	bool inuse=true;
@@ -386,7 +410,7 @@ void OutputControllerEdgeFlipper::Draw() {
 
 	int vof = 0;
 	for (int i=0; i<3; i++) {
-	    if (verts[tris[t].vi[i]].OnFront()) {
+	    if (verts[tris[t].vi[i]].onfront) {
 		vof++;
 	    }
 	}
@@ -411,6 +435,15 @@ void OutputControllerEdgeFlipper::Draw() {
 		     centroid + shrink * (verts[tris[t].vi[1]].position-centroid), color,
 		     centroid + shrink * (verts[tris[t].vi[2]].position-centroid), color);
 
+
+	vector<Point3> line(4);
+	line[0] = centroid + shrink * (verts[tris[t].vi[0]].position-centroid);
+	line[1] = centroid + shrink * (verts[tris[t].vi[1]].position-centroid);
+	line[2] = centroid + shrink * (verts[tris[t].vi[2]].position-centroid);
+	line[3] = centroid + shrink * (verts[tris[t].vi[0]].position-centroid);
+	DbgPLines::add(line);
+	
+
 	/*
 	DbgPoly::add(verts[tris[t].vi[0]].position, color,
 		     verts[tris[t].vi[1]].position, color,
@@ -430,16 +463,16 @@ void OutputControllerEdgeFlipper::Draw() {
 	if (!inuse) continue;
 
 
-	if (verts[v].OnFront() && verts[v].boundary)
+	if (verts[v].onfront && verts[v].boundary)
 	    DbgPoints::add(verts[v].position, 1, 0, 0);
 
-	if (verts[v].OnFront() && !verts[v].boundary)
+	if (verts[v].onfront && !verts[v].boundary)
 	    DbgPoints::add(verts[v].position, 0.5, 0, 0);
 
-	if (!verts[v].OnFront() && verts[v].boundary)
+	if (!verts[v].onfront && verts[v].boundary)
 	    DbgPoints::add(verts[v].position, 0, 1, 0);
 
-	if (!verts[v].OnFront() && !verts[v].boundary)
+	if (!verts[v].onfront && !verts[v].boundary)
 	    DbgPoints::add(verts[v].position, 0, 0.5, 0);
     }
 #endif
@@ -454,13 +487,13 @@ bool OutputControllerEdgeFlipper::VertexRemovable(int vi) const {
     // a vertex is removable if it and all it's neighbors are NOT on any fronts
 
     const EdgeFlipperVertex &v = verts[vi];
-    if (v.OnFront())
+    if (v.onfront)
 	return false;
 
-    for (std::set<int>::iterator iv=v.incidentVerticesLocal.begin();
+    for (std::set<int>::const_iterator iv=v.incidentVerticesLocal.begin();
 	 iv != v.incidentVerticesLocal.end();
 	 ++iv) {
-	if (verts[*iv].OnFront())
+	if (verts[*iv].onfront)
 	    return false;
     }
 
@@ -470,7 +503,7 @@ bool OutputControllerEdgeFlipper::VertexRemovable(int vi) const {
 bool OutputControllerEdgeFlipper::TriangleFlippable(int ti) const {
 
     for (int i=0; i<3; i++) {
-	if (verts[tris[ti].vi[i]].OnFront())
+	if (verts[tris[ti].vi[i]].onfront)
 	    return false;
     }
 
@@ -519,6 +552,9 @@ void OutputControllerEdgeFlipper::FinishVertex(int v) {
 	    cerr<<"erasing triangle with incident verts??"<<endl;
 
     }
+
+    // finish down stream
+    child->FinalizeVertex(verts[v].index);
 
 
     global_to_local_vi.erase(global_to_local_vi.find(verts[v].index));
