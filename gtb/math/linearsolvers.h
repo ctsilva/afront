@@ -29,6 +29,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
 #define __GTB_LINEARSOLVERS_H
 
 
+#include <cmath>   // sqrt in templates: gcc two-phase lookup needs the declaration
 #include <gtb/common.hpp>
 
 GTB_BEGIN_NAMESPACE
