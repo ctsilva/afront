@@ -334,15 +334,30 @@ void extract_boundary_loops(const TriangleMesh &m, vector< vector<int> > &loops)
 		tloop.push_back(start);
 		needadd[start] = false;
 
+		// Walk the boundary until it returns to start. On a nonmanifold boundary
+		// the walk can run onto a vertex already taken by this or another loop
+		// and never return (hung forever on dragonrecon.off); such a chain is
+		// dropped, its vertices get no initial front.
+		bool closed = false;
 		while (1) {
 			TriangleMesh::VertexVertexIteratorI vvi(m, tloop.back());
 			int next = *vvi;
-			if (next == start) break;
+			if (next == start) { closed = true; break; }
+			if (next < 0 || next >= (int)m.verts.size() || !needadd[next]) break;
 			needadd[next] = false;
 			tloop.push_back(next);
 		}
-		
-		loops.push_back(tloop);
+
+		if (closed) {
+			loops.push_back(tloop);
+		} else {
+			static bool warned = false;
+			if (!warned) {
+				cerr << "extract_boundary_loops: boundary chain from vertex " << start << " (" << tloop.size()
+				     << " vertices) does not close - nonmanifold boundary, chain dropped (warning printed once)" << endl;
+				warned = true;
+			}
+		}
 	}
 }
 
