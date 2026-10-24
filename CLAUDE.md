@@ -253,6 +253,14 @@ All in the git history of `~/src/afront-2009-cvs/work`, carried into the fold co
 - `src/main.cpp`: `idealNumThreads` defaults to 8 on arm64 too (was gated on `__x86_64__`); an unknown `-outname` extension exits with a message instead of crashing on the first vertex.
 - The isolated-vertex fix (section 12) was ported into the 2009 `triangle_mesh.cpp`.
 
+Found later the same day on `data/dragonrecon.off` (nonmanifold: 96 edges with three faces, 1,457 boundary loops, 1.7 M unreferenced vertices):
+
+- `gtb/graphics/triangle_mesh.{h,cpp,inl}`: the fan walks in `VertexFaceIteratorI` (constructor and `operator++`) and in `VertOnBoundary` cycled forever around a nonmanifold vertex (sampled: 100% of time there). Bounded by `MAX_VERTEX_FAN` (4096); the iterator warns once, the boundary test reports the vertex as boundary.
+- `src/main.cpp` `extract_boundary_loops`: a boundary chain that runs onto an already-taken vertex never returns to its start and grew the loop vector forever (silent after guidance-field trimming). Such chains are dropped with a one-time warning.
+- `src/main.cpp` boundary resampling: a loop resampled to fewer than 3 points (a hole smaller than the ideal edge length, e.g. with `-min_step`) made a one-element front and hit the `BREAK` (SIGINT) in `Triangulator::PrioritizeEdgeGrow` ("same vertex on both sides of edge"). Dropped and counted.
+
+How these were found: a release run that prints nothing for minutes is sampled with `sample <pid> 3`; for line numbers, `build-dbg/` (RelWithDebInfo) plus `lldb -p <pid> --batch -o 'bt 12' -o detach`. Progress output uses `\r`, so read logs with `tr '\r' '\n' < run.log | tail`.
+
 ## Performance and Threading Characteristics
 
 **Update, October 2026 (2009 code):** the analysis below was measured on the 2007 tree and is obsolete. On the same bunny.off the 2009 code takes 2.5 s with 8 threads and 8.3 s with 1 thread; curvature runs at ~100,000 verts/sec and triangulation at ~19,000 tris/sec. The 2007 build's 21 s came from lock contention in its ThreadLib (42 s of system time), which the 2009 `CriticalSection` (trylock loop) does not have.
@@ -560,6 +568,9 @@ Defined in `common.h`:
 
 ### "couldn't project seed point" / no triangles
 The ideal edge length (from `rho`) exceeds what the projector will move (two voxels). Use `-max_step 2` on coarse synthetic volumes, or a finer volume.
+
+### Run prints nothing for minutes
+Progress lines use carriage returns; `tr '\r' '\n' < run.log | tail -3`. Curvature prints a percent counter, the front prints `NF: n`. If a release build is silent, `sample <pid> 3` shows where it is; three such hangs on nonmanifold meshes were fixed in October 2026 (section 13).
 
 ### GUI opens but nothing happens
 The 2009 GUI starts in "waiting for key" mode; press space to step or see the keyboard help. Batch runs should use `-nogui`.

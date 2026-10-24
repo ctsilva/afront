@@ -60,6 +60,16 @@ torus knot, remeshed at `-rho 0.5` to 4,212 well-shaped triangles. 1.3 s.
 
 ![knot remesh](docs/images/knot_remesh.png)
 
+**A large, messy reconstruction.** `data/dragonrecon.off` is a raw reconstruction of the
+Stanford dragon: 745,040 triangles with the turntable sheet the scans contain, 13,652
+boundary edges from 1,457 holes, 96 edges shared by three faces, and 1.7 million vertices
+that belong to no face (`tools/clean_off.py` drops those first). Remeshed with
+`-rho 0.8 -min_step 0.0015` (the minimum step is about twice the input's mean edge length,
+so holes smaller than that close over): 8x fewer triangles in 11 s. This file hung the
+2007 and the 2009 code; the three fixes it needed are in the changelog.
+
+![dragon remesh](docs/images/dragon_remesh.png)
+
 **Point-set surfaces.** `data/bunny-points-with-normals.obj` (36,228 points with normals)
 meshed through the moving-least-squares projection:
 `./afront -nogui data/bunny-points-with-normals.obj -rho 0.5 -tri_mls`. The result is a
@@ -795,6 +805,12 @@ recovered and replaces the 2007 sources; see [FOLD_NOTES.md](FOLD_NOTES.md) and
   produced a degenerate 4-vertex mesh.
 - The macOS GUI fix and the `[TIMING]` lines were re-applied on the 2009 code; the 2007 SVD
   tolerance patch was not (no convergence failures seen with double precision).
+- Three hangs on nonmanifold input (`data/dragonrecon.off`, 96 edges with three faces),
+  found with stack samples and a debugger: the fan walks around a vertex in
+  `VertexFaceIteratorI` and `VertOnBoundary` are bounded (they cycled forever);
+  `extract_boundary_loops` drops boundary chains that never return to their start; and
+  boundary loops that resample to fewer than 3 points (holes smaller than `-min_step`) are
+  dropped instead of tripping the triangulator's debug break.
 
 ### Modernization for macOS Apple Silicon (October 2025, 2007 tree)
 
