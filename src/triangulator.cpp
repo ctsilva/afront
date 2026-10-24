@@ -27,6 +27,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
 #include "common.h"
 #include "front.h"
 #include "parallel.h"
+#include <set>
 #include "guidance.h"
 #include "triangulator.h"
 
@@ -2130,6 +2131,33 @@ void Triangulator::Go
 					}
 
 				} else {
+					// 2026: log each front the failsafe starts on (where, how long, which block)
+					static std::set<Front*> failsafe_seen;
+					if (failsafe_seen.insert(top->front).second) {
+						int len = 1;
+						for (feli e = Front::NextElement(top); e != top; e = Front::NextElement(e)) len++;
+						fprintf(stderr, "\n[FAILSAFE] front of %d edges at (%g %g %g), block %s\n", len,
+								(double)top->position[0], (double)top->position[1], (double)top->position[2],
+								haveWorkingBlock ? "active" : "none");
+						if (len == 4) {   // diagnostics: what stops the two-triangle closure
+							feli q[4] = { top, Front::NextElement(top), top, top };
+							q[2] = Front::NextElement(q[1]); q[3] = Front::NextElement(q[2]);
+							for (int k=0; k<4; k++) {
+								fprintf(stderr, "  v%d len=%.3f max_step=%.3f ndot_next=%.3f\n", k,
+										(double)Point3::distance(q[k]->position, q[(k+1)%4]->position),
+										(double)q[k]->max_step, (double)q[k]->normal.dot(q[(k+1)%4]->normal));
+							}
+							fprintf(stderr, "  diag02=%.3f diag13=%.3f\n",
+									(double)Point3::distance(q[0]->position, q[2]->position),
+									(double)Point3::distance(q[1]->position, q[3]->position));
+							for (int k=0; k<4; k++) {   // triangle (e1,e2,across) for each choice
+								feli a = Front::NextElement(Front::NextElement(q[k]));
+								fprintf(stderr, "  tri at v%d legal=%d prio=%g\n", k,
+										(int)TriangleLegal(q[k], Front::NextElement(q[k]), &a, a->position, a->normal, NULL, NULL),
+										(double)PrioritizeConnection(*q[k], *Front::NextElement(q[k]), *a));
+							}
+						}
+					}
 					// connect the ear at top, don't check for bad triangles!
 					ConnectTriangle(top, Front::PrevElement(top), failsafe);
 				}
