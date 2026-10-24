@@ -45,6 +45,9 @@ real_type iso_scale = 1;
 
 bool reuse_guidance = false;
 bool reuse_seeds = false;
+// 2026: E4 ablation, one marching-squares cell per block-face cell instead of the certified
+// (interval-arithmetic, Plantinga-Vegter style) subdivision of the face curves
+bool no_isotopic_boundary = false;
 
 bool endswith(const char *s, const char *end);
 
@@ -3046,7 +3049,7 @@ void IsoSurfaceGuidanceField::GetBlockFaceBoundaries(real_type isovalue, int axi
 			xspan[axis][1] = xspan[axis][0];
 
 
-			int depth = BoundaryRecursionDepth(axis, nbrs, coefs, isovalue, xspan, 0);
+			int depth = no_isotopic_boundary ? 1 : BoundaryRecursionDepth(axis, nbrs, coefs, isovalue, xspan, 0);
 
 			if (depth == 0)
 				continue;
