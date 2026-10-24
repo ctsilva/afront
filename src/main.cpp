@@ -544,8 +544,10 @@ int do_tri_mesh(int argc, char* argv[]) {
 
 	if (boundaries.size()) {
 		cerr << (boundaries.size()) << " boundaries." << endl;
+		int dropped = 0;
 		for (unsigned b=0; b<boundaries.size(); b++) {
-			cerr << "Resampling boundary " << b << endl;
+			if (boundaries.size() < 50 || b % 100 == 0)
+				cerr << "Resampling boundary " << b << endl;
 			vector<Point3> ploop;
 			vector< vector<Vector3> > nloop(1);
 			for (unsigned i=0; i<boundaries[b].size(); i++) {
@@ -556,10 +558,17 @@ int do_tri_mesh(int argc, char* argv[]) {
 			vector<Point3> plooprs;
 			vector< vector<Vector3> > nlooprs(1);
 			guidance->ResampleCurve(ploop, nloop, plooprs, nlooprs);
-			
+
+			// A loop resampled to fewer than 3 points (a hole smaller than the
+			// ideal edge length, e.g. with -min_step) cannot be a front: the
+			// triangulator breaks on "same vertex on both sides of edge".
+			if (plooprs.size() < 3) { dropped++; continue; }
+
 			ipts.push_back(plooprs);
 			inorms.push_back(nlooprs[0]);
 		}
+		if (dropped)
+			cerr << dropped << " boundary loops resampled to fewer than 3 points were dropped (holes smaller than the ideal edge length)" << endl;
 	} else if (!crease_indices.size() && !ipts.size()) {
 		unsigned startvert = (unsigned) 0;
 		
