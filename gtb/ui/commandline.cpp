@@ -1,4 +1,30 @@
 
+/*
+
+Copyright 2007 University of Utah
+
+
+This file is part of Afront.
+
+Afront is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published
+by the Free Software Foundation; either version 2 of the License,
+or (at your option) any later version.
+
+Afront is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
+02110-1301, USA
+
+*/
+
+
+
 #include <gtb/gtb.hpp>
 
 #include <vector>
@@ -12,7 +38,7 @@
 
 GTB_BEGIN_NAMESPACE
 
-void CommandLine::AddVariable(char *name, char **var, char *help) {
+void CommandLine::AddVariable(const char *name, char **var, const char *help) {
 	struct Option opt;
 	opt.name = name;
 	opt.type = CharVariable;
@@ -21,7 +47,7 @@ void CommandLine::AddVariable(char *name, char **var, char *help) {
 	_options.push_back(opt);
 }
 
-void CommandLine::AddVariable(char *name, bool *var, char *help) {
+void CommandLine::AddVariable(const char *name, bool *var, const char *help) {
 	struct Option opt;
 	opt.name = name;
 	opt.type = BoolVariable;
@@ -30,7 +56,7 @@ void CommandLine::AddVariable(char *name, bool *var, char *help) {
 	_options.push_back(opt);
 }
 
-void CommandLine::AddVariable(char *name, int *var, char *help) {
+void CommandLine::AddVariable(const char *name, int *var, const char *help) {
 	struct Option opt;
 	opt.name = name;
 	opt.type = IntVariable;
@@ -39,7 +65,7 @@ void CommandLine::AddVariable(char *name, int *var, char *help) {
 	_options.push_back(opt);
 }
 
-void CommandLine::AddVariable(char *name, float *var, char *help) {
+void CommandLine::AddVariable(const char *name, float *var, const char *help) {
 	struct Option opt;
 	opt.name = name;
 	opt.type = FloatVariable;
@@ -48,7 +74,7 @@ void CommandLine::AddVariable(char *name, float *var, char *help) {
 	_options.push_back(opt);
 }
 
-void CommandLine::AddVariable(char *name, double *var, char *help) {
+void CommandLine::AddVariable(const char *name, double *var, const char *help) {
 	struct Option opt;
 	opt.name = name;
 	opt.type = DoubleVariable;
@@ -58,7 +84,7 @@ void CommandLine::AddVariable(char *name, double *var, char *help) {
 }
 
 
-void CommandLine::AddFunction(char *name, PFUN fun, char *help) {
+void CommandLine::AddFunction(const char *name, PFUN fun, const char *help) {
 	struct Option opt;
 	opt.name = name;
 	opt.type = FunctionNoArgs;
@@ -68,7 +94,7 @@ void CommandLine::AddFunction(char *name, PFUN fun, char *help) {
 }
 
 
-void CommandLine::AddFunction(char *name, PFUN2 fun, char *help) {
+void CommandLine::AddFunction(const char *name, PFUN2 fun, const char *help) {
 	struct Option opt;
 	opt.name = name;
 	opt.type = Function;
@@ -86,7 +112,7 @@ void CommandLine::Print() {
 		std::string str = "-";
 		str += _options[i].name;
 
-		char *colon = strchr(_options[i].help, ':');
+		const char *colon = strchr(_options[i].help, ':');
 		if (colon) {
 			std::string args = _options[i].help;
 			args.erase(colon-_options[i].help, strlen(colon));

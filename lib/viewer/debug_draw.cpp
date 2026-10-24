@@ -1,3 +1,31 @@
+
+/*
+
+Copyright 2007 University of Utah
+
+
+This file is part of Afront.
+
+Afront is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published
+by the Free Software Foundation; either version 2 of the License,
+or (at your option) any later version.
+
+Afront is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
+02110-1301, USA
+
+*/
+
+
+#include <stdlib.h>
+#include <string.h>
 #include "debug_draw.h"
 #include <viewer/viewer.h>
 
@@ -44,10 +72,10 @@ void DbgPoly::draw() const {
 
 // poly lines
 DbgPLines DbgPLines::wins[2];
-void DbgPLines::madd(const std::vector<gtb::tPoint3<float> > &a, int c){
+void DbgPLines::madd(const std::vector<gtb::tPoint3<float> > &a, int c, int w){
     if (!Viewer::GetViewer()) return;
     Viewer::GetViewer()->GetCriticalSection().enter();
-    lines.push_back(a);		color.push_back(c);
+    lines.push_back(a);		color.push_back(c);		width.push_back(w);
     Viewer::GetViewer()->GetCriticalSection().leave();
 }
 void DbgPLines::translate(const gtb::tVector3<float> &t) {
@@ -63,7 +91,7 @@ void DbgPLines::translate(const gtb::tVector3<float> &t) {
 void DbgPLines::clear(){
     if (!Viewer::GetViewer()) return;
     Viewer::GetViewer()->GetCriticalSection().enter();
-    lines.resize(0); color.resize(0);
+    lines.resize(0); color.resize(0); width.resize(0);
     Viewer::GetViewer()->GetCriticalSection().leave();
 }
 void DbgPLines::draw() const {
@@ -74,12 +102,15 @@ void DbgPLines::draw() const {
 	case 2:	glColor3f(0,0,1);	break;
 	case 3:	glColor3f(0,0,0);	break;
 	}
+
+	glLineWidth(width[i]);
 	glBegin(GL_LINE_STRIP);
 	for (unsigned p=0; p<lines[i].size(); p++) {
 	    lines[i][p].load();
 	}
 	glEnd();
     }
+	glLineWidth(1);
 }
 
 

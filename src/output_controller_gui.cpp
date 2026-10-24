@@ -1,4 +1,30 @@
 
+/*
+
+Copyright 2007 University of Utah
+
+
+This file is part of Afront.
+
+Afront is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published
+by the Free Software Foundation; either version 2 of the License,
+or (at your option) any later version.
+
+Afront is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
+02110-1301, USA
+
+*/
+
+
+
 
 #include "common.h"
 
@@ -8,6 +34,7 @@
 
 #include "uheap.h"
 #include "front.h"
+#include "parallel.h"
 #include "guidance.h"
 #include "triangulator.h"
 #include "triangulate_mesh.h"
@@ -23,7 +50,7 @@
 void PerpVectors(const Vector3 &n, Vector3 &udir, Vector3 &vdir);
 
 extern const TriangleMesh *cmeshes[2];
-extern const RegularVolume *cvolume;
+extern const Volume *cvolume;
 extern const surfel_set *cpoints;
 extern const TetMesh *ctetmesh;
 extern const TriangleMesh *ctetshell;
@@ -35,6 +62,7 @@ OutputControllerGui::OutputControllerGui(const char *fnames) :
     drawMesh(1),
     drawNormals(false),
     drawBoundaries(true),
+    drawFlat(false),
     drawGuidance(false),
     drawFront(true),
     drawFence(false),
@@ -124,56 +152,72 @@ void OutputControllerGui::DrawMesh(const TriangleMesh &mesh) {
 	return;
 
     if (drawMesh) {
-
-	glEnableClientState(GL_VERTEX_ARRAY);
-	glEnableClientState(GL_NORMAL_ARRAY);
+		if (!drawFlat) {
+			glEnableClientState(GL_VERTEX_ARRAY);
+			glEnableClientState(GL_NORMAL_ARRAY);
 
 #ifdef REAL_IS_FLOAT
-	glVertexPointer(3, GL_FLOAT, (char*)&mesh.verts[1].point - (char*)&mesh.verts[0].point, &mesh.verts[0].point);
-	glNormalPointer(GL_FLOAT, (char*)&mesh.verts[1].normal - (char*)&mesh.verts[0].normal, &mesh.verts[0].normal);
+			glVertexPointer(3, GL_FLOAT, (char*)&mesh.verts[1].point - (char*)&mesh.verts[0].point, &mesh.verts[0].point);
+			glNormalPointer(GL_FLOAT, (char*)&mesh.verts[1].normal - (char*)&mesh.verts[0].normal, &mesh.verts[0].normal);
 #else
-	glVertexPointer(3, GL_DOUBLE, (char*)&mesh.verts[1].point - (char*)&mesh.verts[0].point, &mesh.verts[0].point);
-	glNormalPointer(GL_DOUBLE, (char*)&mesh.verts[1].normal - (char*)&mesh.verts[0].normal, &mesh.verts[0].normal);
+			glVertexPointer(3, GL_DOUBLE, (char*)&mesh.verts[1].point - (char*)&mesh.verts[0].point, &mesh.verts[0].point);
+			glNormalPointer(GL_DOUBLE, (char*)&mesh.verts[1].normal - (char*)&mesh.verts[0].normal, &mesh.verts[0].normal);
 #endif
 
 
-	LoadGLColor(gtb::LightGoldenrod3);
-	const int *index = &mesh.tstrips[0];
-	const int *end = &(*mesh.tstrips.end());
-	while (index<end) {
-	    int len = *index;
-	    index++;
-	    glDrawElements(GL_TRIANGLE_STRIP, len, GL_UNSIGNED_INT, index);
-	    index += len;
-	}
-	glDisableClientState(GL_NORMAL_ARRAY);
+			LoadGLColor(gtb::LightGoldenrod3);
+			const int *index = &mesh.tstrips[0];
+			const int *end = &(*mesh.tstrips.end());
+			while (index<end) {
+				int len = *index;
+				index++;
+				glDrawElements(GL_TRIANGLE_STRIP, len, GL_UNSIGNED_INT, index);
+				index += len;
+			}
+			glDisableClientState(GL_NORMAL_ARRAY);
+			glDisableClientState(GL_VERTEX_ARRAY);
+		} else {
+			
+			LoadGLColor(gtb::LightGoldenrod3);
+
+			glBegin(GL_TRIANGLES);
+			for (int f=0; f<mesh.faces.size(); f++) {
+				Vector3 norm = mesh.FaceNormal(mesh.faces[f]);
+				norm.load_as_normal();
+				for (int i=0; i<3; i++) {
+					mesh.verts[mesh.faces[f].verts[i]].point.load();
+				}
+			}
+			glEnd();
+		}
+
+		glEnableClientState(GL_VERTEX_ARRAY);
+		if (drawMesh & 2) {
+			glDisable(GL_LIGHTING);
+			glColor3f(0,0,0);
+			glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+
+			const int *index = &mesh.tstrips[0];
+			const int *end = &(*mesh.tstrips.end());
+			while (index<end) {
+				int len = *index;
+				index++;
+				glDrawElements(GL_TRIANGLE_STRIP, len, GL_UNSIGNED_INT, index);
+				index += len;
+			}
 
 
-	if (drawMesh & 2) {
-	    glDisable(GL_LIGHTING);
-	    glColor3f(0,0,0);
-	    glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+			glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+			glEnable(GL_LIGHTING);
+		}
 
-	    const int *index = &mesh.tstrips[0];
-	    const int *end = &(*mesh.tstrips.end());
-	    while (index<end) {
-		int len = *index;
-		index++;
-		glDrawElements(GL_TRIANGLE_STRIP, len, GL_UNSIGNED_INT, index);
-		index += len;
-	    }
-
-
-	    glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-	    glEnable(GL_LIGHTING);
-	}
-
-	glDisableClientState(GL_VERTEX_ARRAY);
+		glDisableClientState(GL_VERTEX_ARRAY);
     }
 
     if (drawBoundaries) {
 	glColor3f(0,0,1);
-	glLineWidth(2);
+	extern int boundary_width;
+	glLineWidth(boundary_width);
 	glDisable(GL_LIGHTING);
 	glBegin(GL_LINES);
 	for (unsigned v=0; v<mesh.verts.size(); v++) {
@@ -189,6 +233,17 @@ void OutputControllerGui::DrawMesh(const TriangleMesh &mesh) {
 	glEnable(GL_LIGHTING);
 	glLineWidth(1);
     }
+
+#if 0
+    glDisable(GL_LIGHTING);
+    glBegin(GL_TRIANGLES);
+    glColor3f(1,0,0);
+    for (int i=0; i<3; i++) {
+	mesh.verts[mesh.faces.back().verts[i]].point.load();
+    }
+    glEnd();
+    glEnable(GL_LIGHTING);
+#endif
 }
 
 
@@ -286,7 +341,7 @@ void OutputControllerGui::Draw(int win) {
 
 
     // can't really draw the volume, so just draw a wireframe box around it
-    if (!cvolume->Empty()) {
+    if (cvolume && drawMesh) {
 	Box3 volbox = cvolume->bounding_box();
 
 	glBegin(GL_LINE_LOOP);
@@ -367,21 +422,24 @@ void OutputControllerGui::Draw(int win) {
                 glLineWidth(3.0);
 		glBegin(GL_LINES);
 		for (unsigned f2=0; f2<drawfronts_p[f].size(); f2++) {
-		    switch (drawfronts_s[f][f2]) {
-
-		    case PRIORITY_GROW_EDGE:
-			glColor3f(0,0,1);
-			break;
-		    case PRIORITY_CONNECT:
+		    int p = drawfronts_s[f][f2];
+		    if (p >= PRIORITY_CONNECTOR) {
 			glColor3f(1,0,0);
-			break;
-		    case PRIORITY_FAILSAFE:
+			//			continue;
+		    } else if (p == PRIORITY_GROW_EDGE) {
+			glColor3f(0,0,1);
+		    } else if (p == PRIORITY_CONNECT) {
+			glColor3f(1,0,0);
+		    } else if (p == PRIORITY_FAILSAFE) {
 			glColor3f(1,1,0);
-			break;
-		    default:	// PRIORITY_OWA
+		    } else if (p == PRIORITY_FAILSAFE_WILLFAIL) {
+			glColor3f(0.8,0.8,0);
+		    } else if (p >= PRIORITY_OWB) {
 			glColor3f(0.8,0.8,1.0);
-			break;
+		    } else { // p>= PRIORITY_OWA
+			glColor3f(0.5,0.5,0.5);
 		    }
+
 		    drawfronts_p[f][f2].load();
 		    drawfronts_p[f][(f2+1)%drawfronts_p[f].size()].load();
 		}
@@ -726,6 +784,11 @@ void OutputControllerGui::Key(int win, unsigned char key) {
 		drawBoundaries = !drawBoundaries;
 		break;
 
+	    case 't':
+	    case 'T':
+		drawFlat = !drawFlat;
+		break;
+
 	    case 'n':
 	    case 'N':
 		drawNormals = !drawNormals;
@@ -763,11 +826,6 @@ void OutputControllerGui::Key(int win, unsigned char key) {
 		dbgClear();
 		break;
 
-	    case 'i':
-	    case 'I':
-		ToggleImmediateMode();
-		break;
-
 	    case '2':
 		ToggleOrtho();
 		break;
@@ -784,48 +842,30 @@ void OutputControllerGui::Key(int win, unsigned char key) {
 		    cerr<<"view information loaded"<<endl;
 		break;
 
-	    case 'q':
-	    case 'Q':
-	    case 27:  // ESC key
-		cerr<<"Quitting..."<<endl;
-		exit(0);
-		break;
+		case 'r':
+		case 'R':
+			SetUnsharpWidth(25);
+			SetUnsharpLambda(30);
+			ApplyUnsharp();
+			ScreenShot("screenshot.ppm", true);
+			SetUnsharpWidth(0);
+			SetUnsharpLambda(4);
+			break;
 
-	    case '?':
-	    case 'h':
-	    case 'H':
-		cerr<<"\n========== AFRONT GUI KEYBOARD CONTROLS ==========\n";
-		cerr<<"Triangulation Control:\n";
-		cerr<<"  p/P       - Toggle pause/unpause triangulation\n";
-		cerr<<"  Spacebar  - Single-step when paused\n";
-		cerr<<"\nDisplay Toggles:\n";
-		cerr<<"  m/M       - Cycle mesh drawing mode\n";
-		cerr<<"  o/O       - Cycle output drawing mode\n";
-		cerr<<"  b/B       - Toggle boundaries display\n";
-		cerr<<"  n/N       - Toggle normals display\n";
-		cerr<<"  g/G       - Toggle guidance field visualization\n";
-		cerr<<"  f/F       - Toggle front display\n";
-		cerr<<"  e/E       - Toggle fence display\n";
-		cerr<<"  +         - Increase point size\n";
-		cerr<<"  -         - Decrease point size\n";
-		cerr<<"\nView Controls:\n";
-		cerr<<"  a/A       - View all (reset camera)\n";
-		cerr<<"  i/I       - Toggle immediate rendering mode\n";
-		cerr<<"  2         - Toggle orthographic projection\n";
-		cerr<<"\nSave/Load:\n";
-		cerr<<"  s/S       - Save view to view.txt\n";
-		cerr<<"  l/L       - Load view from view.txt\n";
-		cerr<<"\nMouse Controls:\n";
-		cerr<<"  Left drag       - Rotate view\n";
-		cerr<<"  Shift+Left      - Zoom\n";
-		cerr<<"  Command+Left    - Zoom (macOS)\n";
-		cerr<<"  Alt+Left        - Pan view\n";
-		cerr<<"\nOther:\n";
-		cerr<<"  c/C       - Clear debug drawings\n";
-		cerr<<"  q/Q/ESC   - Quit\n";
-		cerr<<"  ?/h/H     - Show this help\n";
-		cerr<<"==================================================\n\n";
-		break;
+
+		case 'u':
+			DecUnsharpWidth();
+			break;
+		case 'U':
+			IncUnsharpWidth();
+			break;
+
+		case 'i':
+			DecUnsharpLambda();
+			break;
+		case 'I':
+			IncUnsharpLambda();
+			break;
 
 	    }
     }
@@ -843,10 +883,12 @@ void OutputControllerGui::Mouse(int win, int button, int motion, int wx, int wy,
     if (button == GLUT_MIDDLE_BUTTON && motion==-1) {
 	if (z < 1e8) {
 	    LookAt(win, x, y, z);
+		cerr<<"looking at "<<x<<" "<<y<<" "<<z<<endl;
 	} else {
 	    cerr<<"Center not set"<<endl;
 	}
     }
+	Redraw();
 }
 
 void OutputControllerGui::BoundingSphere(int win, float &x, float &y, float &z, float &r) {
@@ -869,7 +911,7 @@ void OutputControllerGui::BoundingSphere(int win, float &x, float &y, float &z, 
 	hasbox=true;
     }
 
-    if (!cvolume->Empty()) {
+    if (cvolume) {
 	Box3 tbox = cvolume->bounding_box();
 	box = hasbox ? Box3::make_union(box, tbox) : tbox;
 	hasbox=true;

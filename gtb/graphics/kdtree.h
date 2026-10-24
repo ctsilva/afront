@@ -1,3 +1,29 @@
+
+/*
+
+Copyright 2007 University of Utah
+
+
+This file is part of Afront.
+
+Afront is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published
+by the Free Software Foundation; either version 2 of the License,
+or (at your option) any later version.
+
+Afront is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
+02110-1301, USA
+
+*/
+
+
 #ifndef __KDTREE_H
 #define __KDTREE_H
 
@@ -130,6 +156,7 @@ public:
     //
     bool empty() const { return c.empty(); }
     size_type size() const { return c.size(); }
+    void clear() { c.clear(); }
     const_reference top() const { return c.front(); }
 
     void push(const value_type& __x) 
@@ -1501,6 +1528,7 @@ typename KDTree<T, REAL, GETPOINT>::Node* KDTree<T, REAL, GETPOINT>::Split (
     }
 
     cell->objects.erase(last_left, cell->objects.end());
+    compact(cell->objects);
 
     TreeNode* subroot = new TreeNode;
     subroot->cut_point = cut_point;
@@ -2007,7 +2035,9 @@ private:
 
 
 		// check if we should stop splitting
-		if (objects.size() >= BOXKDTREE_MAXLEAFSIZE) {
+		if (objects.size() <= BOXKDTREE_MAXLEAFSIZE) {
+			compact(objects);
+		} else {
 
 			// if we're not told what axis to use, use the biggest
 			if (axis == -1) {
@@ -2060,8 +2090,8 @@ private:
 			if ((cobjects[0].size() != 0) && (cobjects[1].size() != 0)) {
 
 				// actually have to split
-
 				objects.clear();
+				compact(objects);
 
 				assert(!children[0] && !children[1]);
 

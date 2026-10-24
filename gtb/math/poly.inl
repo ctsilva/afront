@@ -1,3 +1,29 @@
+
+/*
+
+Copyright 2007 University of Utah
+
+
+This file is part of Afront.
+
+Afront is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published
+by the Free Software Foundation; either version 2 of the License,
+or (at your option) any later version.
+
+Afront is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
+02110-1301, USA
+
+*/
+
+
 template <int Degree,
 	  class Real,
 	  template <typename> class Basis>
@@ -5,7 +31,7 @@ Real Poly1<Degree, Real, Basis>::Eval(Real x) const
 {
     Real result=(Real)0;
     for (int ix=0; ix <= Degree; ++ix)
-	result += _coefs[imap(ix)] * TermEval(ix, x);
+	result += _coefs[imap(ix)] * this->TermEval(ix, x);
     return result;
 }
 
@@ -18,8 +44,8 @@ Real Poly2<Degree, Real, Basis>::Eval(Real x, Real y) const
     for (int ix=0; ix <= Degree; ++ix)
 	for (int iy = 0; iy <= Degree - ix; ++iy) {
 	    result += _coefs[imap(ix, iy)] 
-		* TermEval(ix, x)
-		* TermEval(iy, y);
+		* this->TermEval(ix, x)
+		* this->TermEval(iy, y);
 	    }
     return result;
 }
@@ -34,7 +60,7 @@ Real Poly3<Degree, Real, Basis>::Eval
     for (int ix=0; ix <= Degree; ++ix)
 	for (int iy = 0; iy <= Degree - ix; ++iy)
 	    for (int iz = 0; iz <= Degree - (iy+ix); ++iz) {
-	    result += _coefs[imap(ix, iy, iz)]
+	    result += _coefs[imap(ix, iy, iz)] 
 		* this->TermEval(ix, x)
 		* this->TermEval(iy, y)
 		* this->TermEval(iz, z);
@@ -56,7 +82,7 @@ void Poly1<Degree, Real, Basis>::LeastSquares
 
     for (int i=0; i<(int)xs.size(); ++i)
 	for (int j=0; j<=Degree; ++j) 
-	    a(i,imap(j)) = TermEval(j, xs[i]);
+	    a(i,imap(j)) = this->TermEval(j, xs[i]);
     SVDSolve(a, b, x);
     for (int i=0; i<CoefCount; ++i)
 	_coefs[i] = x[i];
@@ -76,7 +102,7 @@ void Poly2<Degree, Real, Basis>::LeastSquares
     for (int r=0; r<(int)xs.size(); ++r)
 	for (int ix=0; ix<=Degree; ++ix) 
 		for (int iy=0; iy<=Degree-ix; ++iy)
-		    a(r,imap(ix,iy)) = TermEval(ix, xs[r]) * TermEval(iy, ys[r]);
+		    a(r,imap(ix,iy)) = this->TermEval(ix, xs[r]) * this->TermEval(iy, ys[r]);
 
     SVDSolve(a, b, x);
     for (int i=0; i<CoefCount; ++i)
@@ -101,7 +127,7 @@ void Poly3<Degree, Real, Basis>::LeastSquares
 	for (int ix=0; ix<=Degree; ++ix) 
 		for (int iy=0; iy<=Degree-ix; ++iy)
 			for (int iz=0; iz<=Degree-(ix+iy); ++iz)
-			    a(r,imap(ix,iy,iz)) = TermEval(ix, xs[r]) * TermEval(iy, ys[r]) * TermEval(iz, zs[r]);
+			    a(r,imap(ix,iy,iz)) = this->TermEval(ix, xs[r]) * this->TermEval(iy, ys[r]) * this->TermEval(iz, zs[r]);
 
     SVDSolve(a, b, x);
     for (int i=0; i<CoefCount; ++i)
@@ -123,7 +149,7 @@ void Poly3<Degree, Real, Basis>::LeastSquares
 		b[(int)i] = weights[i] * fxs[i];
 
     for (int r=0; r<(int)xs.size(); ++r)
-	for (int ix=0; ix<=Degree; ++ix)
+	for (int ix=0; ix<=Degree; ++ix) 
 		for (int iy=0; iy<=Degree-ix; ++iy)
 			for (int iz=0; iz<=Degree-(ix+iy); ++iz)
 			    a(r,imap(ix,iy,iz)) = weights[r] * this->TermEval(ix, xs[r]) * this->TermEval(iy, ys[r]) * this->TermEval(iz, zs[r]);

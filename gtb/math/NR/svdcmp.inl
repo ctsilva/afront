@@ -1,4 +1,30 @@
 
+/*
+
+Copyright 2007 University of Utah
+
+
+This file is part of Afront.
+
+Afront is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published
+by the Free Software Foundation; either version 2 of the License,
+or (at your option) any later version.
+
+Afront is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
+02110-1301, USA
+
+*/
+
+
+
 #include <math.h>
 #include "nrutil.h"
 
@@ -18,7 +44,7 @@ T pythag(T a, T b)
 
 
 // Given a matrix a[1..m][1..n], this routine computes its singular value decomposition, A =
-// Uï¿½Wï¿½V T. The matrix U replaces a on output. The diagonal matrix of singular values W is output
+// U·W·V T. The matrix U replaces a on output. The diagonal matrix of singular values W is output
 // as a vector w[1..n]. Thematrix V (not the transpose V T ) is output as v[1..n][1..n].
 template <typename T>
 void svdcmp(T **a, int m, int n, T w[], T **v)
@@ -104,19 +130,16 @@ void svdcmp(T **a, int m, int n, T w[], T **v)
 	} else for (j=i;j<=m;j++) a[j][i]=0.0;
 	++a[i][i];
     }
-    for (k=n;k>=1;k--) { //Diagonalization of the bidiagonal form: Loop over singular values,
-	for (its=1;its<=300;its++) {  // and over allowed iterations (increased from 30 to 300)
+    for (k=n;k>=1;k--) { //Diagonalization of the bidiagonal form: Loop over singular values, 
+	for (its=1;its<=30;its++) {  // and over allowed iterations.
 	    flag=1;
 	    for (l=k;l>=1;l--) { // Test for splitting.
 		nm=l-1; // Note that rv1[1] is always zero.
-		// Use epsilon tolerance instead of exact equality for float comparisons
-		// Use max to avoid eps=0 for degenerate cases
-		T eps = (anorm > 1e-10) ? anorm * 1e-6 : 1e-10;
-		if (fabs(rv1[l]) <= eps) {
+		if ((T)(fabs(rv1[l])+anorm) == anorm) {
 		    flag=0;
 		    break;
 		}
-		if (fabs(w[nm]) <= eps) break;
+		if ((T)(fabs(w[nm])+anorm) == anorm) break;
 	    }
 	    if (flag) {
 		c=0.0; // Cancellation of rv1[l], if l > 1.
@@ -124,9 +147,7 @@ void svdcmp(T **a, int m, int n, T w[], T **v)
 		for (i=l;i<=k;i++) {
 		    f=s*rv1[i];
 		    rv1[i]=c*rv1[i];
-		    // Use epsilon tolerance
-		    T eps = (anorm > 1e-10) ? anorm * 1e-6 : 1e-10;
-		    if (fabs(f) <= eps) break;
+		    if ((T)(fabs(f)+anorm) == anorm) break;
 		    g=w[i];
 		    h=pythag(f,g);
 		    w[i]=h;
@@ -149,12 +170,7 @@ void svdcmp(T **a, int m, int n, T w[], T **v)
 		}
 		break;
 	    }
-	    if (its == 300) {
-		// Failed to converge - just return with current values
-		// fprintf(stderr, "WARNING: SVD did not converge after 300 iterations\n");
-		free_avector(rv1,1,n);
-		return;
-	    }
+	    if (its == 30) nrerror("no convergence in 30 svdcmp iterations");
 	    x=w[l]; // Shift from bottom 2-by-2 minor.
 	    nm=k-1;
 	    y=w[nm];

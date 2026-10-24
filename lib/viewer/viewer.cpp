@@ -1,4 +1,36 @@
 
+/*
+
+Copyright 2007 University of Utah
+
+
+This file is part of Afront.
+
+Afront is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published
+by the Free Software Foundation; either version 2 of the License,
+or (at your option) any later version.
+
+Afront is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
+02110-1301, USA
+
+*/
+
+
+
+#include <GL/glut.h>
+#ifndef GLUT_ACTIVE_SUPER
+#define GLUT_ACTIVE_SUPER 0x0008   // Command/Meta key; missing from older GLUT headers
+#endif
+#include <stdlib.h>
+#include <string.h>
 #include <vector>
 #include <iostream>
 
@@ -9,11 +41,6 @@
 #include "viewer.h"
 #include "trackball.h"
 
-// GLUT_ACTIVE_SUPER is Command/Meta key (may not be defined in older GLUT)
-#ifndef GLUT_ACTIVE_SUPER
-#define GLUT_ACTIVE_SUPER 0x0008
-#endif
-
 
 void *Viewer::start_stub(void *arg)
 {
@@ -22,13 +49,18 @@ void *Viewer::start_stub(void *arg)
 }
 
 
+// macOS requires glutInit, window creation and glutMainLoop to run on the
+// application's main thread (port of the 2025 fix to the 2007 tree, see CLAUDE.md).
+// Start() therefore initializes GLUT synchronously on the caller's thread and the
+// caller must run Go() on that same thread; the original spawned a thread here.
 void Viewer::Start() {
-	// IMPORTANT: On macOS, GLUT initialization and window creation
-	// must happen on the main thread. Do it here synchronously.
-	// Caller MUST call Go() on the main thread afterwards.
-	_critical_section.enter();
+    _critical_section.enter();
 
-	int argc=1; char *argv[1] = { "blah" };
+	int argc=1;
+	char *argv[1];
+	char blah[100] = "blah";
+	argv[0]=blah;
+
 	glutInit(&argc, argv);
 	glutInitDisplayMode(GLUT_RGBA | GLUT_DEPTH | GLUT_DOUBLE);
 
@@ -37,18 +69,12 @@ void Viewer::Start() {
 	}
 	glut_has_initialized = true;
 	_critical_section.leave();
-
-	// DON'T spawn thread - caller will run Go() on main thread
-	// The old code spawned a thread here, but macOS now requires
-	// glutMainLoop to run on the main thread.
 }
 
 
 
 
 void Viewer::Go() {
-    // GLUT initialization already done in Start() on main thread
-    // Just run the event loop here
     glutMainLoop();	// never returns!
 }
 
@@ -91,7 +117,9 @@ input_cs(),
 last_key(-1),
 last_key_win(-1),
 last_click_win(-1),
-last_click_button(-1)
+last_click_button(-1),
+key_send(0),
+key_send_window(-1)
 {
 	if (theViewer) {
 		std::cerr<<"can only create one viewer, exiting!"<<std::endl;
@@ -131,7 +159,8 @@ void Viewer::MakeWindow(int win)
     glutMotionFunc(s_gc_motion);
     glutPassiveMotionFunc(s_gc_passive_motion);
     glutIdleFunc(s_gc_idle);
-    
+
+	glutSetCursor(GLUT_CURSOR_CROSSHAIR);
     Init(win);
 }
 
@@ -158,6 +187,311 @@ void Viewer::ToggleImmediateMode(int win) {
 		windows[i]->immediatemode = !windows[i]->immediatemode;
 		windows[i]->redraw=true;
 		windows[i]->cs.leave();
+	}
+}
+
+
+void Viewer::IncUnsharpWidth(int win) {
+
+	int begin=(win<0) ? 0 : win;
+	int end = (win<0) ? (int)windows.size() : win+1;
+	
+	for (int i=begin; i<end; i++) {
+		windows[i]->cs.enter();
+		windows[i]->unsharp_width++;
+		windows[i]->redraw=true;
+		windows[i]->cs.leave();
+	}
+}
+
+
+void Viewer::DecUnsharpWidth(int win) {
+
+	int begin=(win<0) ? 0 : win;
+	int end = (win<0) ? (int)windows.size() : win+1;
+	
+	for (int i=begin; i<end; i++) {
+		windows[i]->cs.enter();
+		windows[i]->unsharp_width = std::max(1, windows[i]->unsharp_width-1);
+		windows[i]->redraw=true;
+		windows[i]->cs.leave();
+	}
+}
+
+void Viewer::SetUnsharpWidth(int w, int win) {
+
+	int begin=(win<0) ? 0 : win;
+	int end = (win<0) ? (int)windows.size() : win+1;
+	
+	for (int i=begin; i<end; i++) {
+		windows[i]->cs.enter();
+		windows[i]->unsharp_width = w;
+		windows[i]->redraw=true;
+		windows[i]->cs.leave();
+	}
+}
+
+void Viewer::IncUnsharpLambda(int win) {
+
+	int begin=(win<0) ? 0 : win;
+	int end = (win<0) ? (int)windows.size() : win+1;
+	
+	for (int i=begin; i<end; i++) {
+		windows[i]->cs.enter();
+		windows[i]->unsharp_lambda++;
+		windows[i]->redraw=true;
+		windows[i]->cs.leave();
+	}
+}
+
+
+void Viewer::DecUnsharpLambda(int win) {
+
+	int begin=(win<0) ? 0 : win;
+	int end = (win<0) ? (int)windows.size() : win+1;
+	
+	for (int i=begin; i<end; i++) {
+		windows[i]->cs.enter();
+		windows[i]->unsharp_lambda = std::max(1, windows[i]->unsharp_lambda-1);
+		windows[i]->redraw=true;
+		windows[i]->cs.leave();
+	}
+}
+
+void Viewer::SetUnsharpLambda(int w, int win) {
+
+	int begin=(win<0) ? 0 : win;
+	int end = (win<0) ? (int)windows.size() : win+1;
+	
+	for (int i=begin; i<end; i++) {
+		windows[i]->cs.enter();
+		windows[i]->unsharp_lambda = w;
+		windows[i]->redraw=true;
+		windows[i]->cs.leave();
+	}
+}
+
+
+void Viewer::ApplyUnsharp(int win) {
+
+	int begin=(win<0) ? 0 : win;
+	int end = (win<0) ? (int)windows.size() : win+1;
+	
+	for (int _w=begin; _w<end; _w++) {
+		Window &w = *windows[_w];
+		w.cs.enter();
+
+		// get the color and depth buffers
+		float *color = new float[w.width*w.height*4];
+
+		float *depth = new float[w.width*w.height];
+		
+		glReadBuffer(GL_BACK);
+		glReadPixels(0, 0, w.width, w.height, GL_DEPTH_COMPONENT, GL_FLOAT, (void*)depth);
+		glReadPixels(0, 0, w.width, w.height, GL_RGBA, GL_FLOAT, (void*)color);
+
+		float n = fabs((-w.pan_z+w.dolly))/1000;
+		float f = (-w.pan_z + w.dolly+2)*2;
+
+		// unproject the z's
+		for (int y=0; y<w.height; y++) {
+			for (int x=0; x<w.width; x++) {
+				GLdouble objx, objy, objz;
+				if (depth[y*w.width+x] == 1) {
+					depth[y*w.width+x] = 0;
+				} else {
+					float z = (2 * n) / (f + n - depth[y*w.width+x] * (f - n));
+					depth[y*w.width+x] = - (f*n) / ((depth[y*w.width+x]/* / s*/) * (f-n) - f);
+				}
+			}
+		}
+
+		// rescale the depths to be in [0,1]
+		float min=1000000;
+		float max=-1000000;
+		for (int i=0; i<w.width*w.height; i++) {
+			if (depth[i] != 0) {
+				min = std::min(min, depth[i]);
+				max = std::max(max, depth[i]);
+			}
+		}
+
+
+		for (int i=0; i<w.width*w.height; i++) {
+			if (depth[i] != 0) {
+				depth[i] = (depth[i]-min)/(max-min);
+			}
+		}
+
+
+
+		// blur the depth buffer
+		float *depth_b = new float[w.width*w.height];
+		float *depth_t = new float[w.width*w.height]; // transposed!
+
+		// first in x
+		for (int y=0; y<w.height; y++) {
+
+			for (int x=0; x<w.width; x++) {
+				depth_t[x*w.height+y] = 0;
+				float weight = 0;
+
+				for (int xw=std::max(0,x-w.unsharp_width);
+					 xw<=std::min(w.width-1,x+w.unsharp_width);
+					 xw++) {
+
+					float thisw = 1;
+					float thisd = depth[y*w.width + xw];
+
+					if (thisd != 0) {
+						depth_t[x*w.height+y] += thisw * thisd;
+						weight += thisw;
+					}
+				}
+
+				if (weight!=0 && depth[y*w.width+x]!=0)
+					depth_t[x*w.height+y] /= weight;
+				else
+					depth_t[x*w.height+y] = depth[y*w.width+x];
+			}
+		}
+
+
+		// now in y, but from the transposed
+		for (int x=0; x<w.width; x++) {
+
+			for (int y=0; y<w.height; y++) {
+				depth_b[y*w.width+x] = 0;
+				float weight = 0;
+
+				for (int yw=std::max(0,y-w.unsharp_width);
+					 yw<=std::min(w.height-1,y+w.unsharp_width);
+					 yw++) {
+
+					float thisw = 1;
+					float thisd = depth_t[x*w.height + yw];
+
+					if (thisd != 0) {
+						depth_b[y*w.width + x] += thisw * thisd;
+						weight += thisw;
+					}
+				}
+
+				if (weight!=0 && depth[y*w.width+x]!=0)
+					depth_b[y*w.width+x] /= weight;
+				else
+					depth_b[y*w.width+x] = depth[y*w.width+x];
+			}
+		}
+		delete [] depth_t;
+
+
+
+		// compute the new colors
+		int tw = 1;
+		while (tw < w.width) tw<<=1;
+
+		int th = 1;
+		while (th < w.height) th<<=1;
+
+		float *ncolor = new float[tw*th*4];
+		for (int i=0; i<tw*th*4; i++) ncolor[i] = 0;
+
+		for (int y=0; y<w.height; y++) {
+			for (int x=0; x<w.width; x++) {
+				float dd = depth_b[y*w.width+x] - depth[y*w.width+x];
+				if (dd >= 0) {
+					ncolor[(y*tw + x)*4 + 0] = color[(y*w.width + x)*4 + 0];
+					ncolor[(y*tw + x)*4 + 1] = color[(y*w.width + x)*4 + 1];
+					ncolor[(y*tw + x)*4 + 2] = color[(y*w.width + x)*4 + 2];
+				} else {
+
+					if (dd<0) dd=-dd;
+					dd = exp(-pow(dd*w.unsharp_lambda,2))*0.25+0.75;
+
+					ncolor[(y*tw + x)*4 + 0] = color[(y*w.width + x)*4 + 0] * (dd);
+					ncolor[(y*tw + x)*4 + 1] = color[(y*w.width + x)*4 + 1] * (dd);
+					ncolor[(y*tw + x)*4 + 2] = color[(y*w.width + x)*4 + 2] * (dd);
+				}
+			}
+		}
+
+
+		// render the new colors back
+		GLuint texture;
+		glGenTextures(1, &texture);
+		glBindTexture(GL_TEXTURE_2D, texture);
+		
+		glTexImage2D(GL_TEXTURE_2D,
+					 0,
+					 GL_RGB,
+					 tw,
+					 th,
+					 0,
+					 GL_RGBA,
+					 GL_FLOAT,
+					 ncolor);
+
+
+		glEnable(GL_TEXTURE_2D);
+		glDisable(GL_DEPTH_TEST);
+		glDepthMask(0);
+
+		glMatrixMode(GL_PROJECTION);
+		glPushMatrix();
+		glLoadIdentity();
+		gluOrtho2D(0,w.width,0,w.height);
+
+		glMatrixMode(GL_MODELVIEW);
+		glPushMatrix();
+		glLoadIdentity();
+
+		glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
+		glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+		glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+
+		glBegin(GL_QUADS);
+
+		glColor3f(1,1,1);
+
+		glTexCoord2f(0,0);
+		glVertex2f(0,0);
+
+		glTexCoord2f((float)w.width/tw, 0);
+		glVertex2f(w.width,0);
+
+		glTexCoord2f((float)w.width/tw, (float)w.height/th);
+		glVertex2f(w.width,w.height);
+
+		glTexCoord2f(0,(float)w.height/th);
+		glVertex2f(0,w.height);
+
+		glEnd();
+		
+
+		glEnable(GL_DEPTH_TEST);
+		glDisable(GL_TEXTURE_2D);
+		glDepthMask(1);
+
+		glDeleteTextures(1,&texture);
+
+
+		glMatrixMode(GL_PROJECTION);
+		glPopMatrix();
+
+		glMatrixMode(GL_MODELVIEW);
+		glPopMatrix();
+
+
+		delete [] depth;
+		delete [] depth_b;
+
+		delete [] ncolor;
+		delete [] color;
+
+
+
+		w.cs.leave();
 	}
 }
 
@@ -281,7 +615,7 @@ void Viewer::SetCamSyncOut(int win) {
 }
 
 
-bool Viewer::SaveViewInfo(char *filename, int win) {
+bool Viewer::SaveViewInfo(const char *filename, int win) {
 	FILE *f = fopen(filename, "w");
 	if (!f) return false;
 	SaveViewInfo(f, win);
@@ -302,7 +636,7 @@ void Viewer::SaveViewInfo(FILE *f, int win) {
 }
 
 
-bool Viewer::LoadViewInfo(char *filename, int win) {
+bool Viewer::LoadViewInfo(const char *filename, int win) {
 
 	FILE *f = fopen(filename, "r");
 	if (!f) return false;
@@ -421,6 +755,47 @@ void Viewer::LookAt(int win, float x, float y, float z) {
 		SaveViewInfo(stdout, win);
 }
 
+
+
+void Viewer::ScreenShot(const char *filename, bool front, int win) {
+	std::cerr<<"saving screenshot: "<<filename<<std::endl;
+
+	Window &w = *windows[win];
+	w.cs.enter();
+
+	unsigned char *buff = new unsigned char[w.width*w.height*3];
+
+	if (front) {
+		glReadBuffer(GL_FRONT);
+	} else {
+		glReadBuffer(GL_BACK);
+	}
+	glPixelStorei(GL_PACK_ALIGNMENT, 1);
+	glReadPixels(0, 0, w.width, w.height, GL_RGB, GL_UNSIGNED_BYTE, buff);
+
+	w.cs.leave();
+
+
+	FILE *f = fopen(filename, "w");
+	if (!f) {
+		std::cerr<<"couldn't open file: "<<filename<<std::endl;
+	} else {
+		fprintf(f, "P3 %d %d\n 255\n", w.width, w.height);
+
+		for (int y=w.height-1; y>=0; y--) {
+			for (int x=0; x<w.width; x++) {
+				int i = (y*w.width + x)*3;
+				fprintf(f, "%d %d %d\n", buff[i], buff[i+1], buff[i+2]);
+			}
+		}
+
+		fclose(f);
+	}
+
+	delete [] buff;
+}
+
+
 void Viewer::SetMessage(int win, const char *msg) {
 	Window &w = *windows[win];
 
@@ -452,6 +827,19 @@ void Viewer::s_gc_display() {
 	theViewer->gc_display();
 }
 void Viewer::gc_display() {
+
+	if (key_send != 0) {
+		int begin=(key_send_window<0) ? 0 : key_send_window;
+		int end = (key_send_window<0) ? (int)windows.size() : key_send_window+1;
+	
+		for (int i=begin; i<end; i++) {
+			Key(i, key_send);
+		}
+
+		key_send = 0;
+	}
+
+
 	int win = GetCurrentWindowIndex();
 	Window &w = *windows[win];
 
@@ -459,22 +847,6 @@ void Viewer::gc_display() {
 
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-	// use peterson's algorithm to protect the status message
-	glColor3f(0,0,0);
-	glDisable(GL_LIGHTING);
-
-	{
-
-		glMatrixMode(GL_PROJECTION);
-		glLoadIdentity();
-		gluOrtho2D(0,w.width,0,w.height);
-		glMatrixMode(GL_MODELVIEW);
-		glLoadIdentity();
-		glRasterPos3f(35,75,0);
-
-		for(char *c=w.status_msg; (*c && *c!='\n'); c++)
-			glutBitmapCharacter(GLUT_BITMAP_8_BY_13,*c);
-	}
 
 
     glMatrixMode(GL_PROJECTION);
@@ -483,7 +855,7 @@ void Viewer::gc_display() {
 	if (w.ortho) {
 		glOrtho(-(w.dolly), (w.dolly), -(GLfloat)w.height / (GLfloat)w.width*(w.dolly), (GLfloat)w.height / (GLfloat)w.width*(w.dolly), fabs((-w.pan_z+w.dolly))/100, (-w.pan_z + w.dolly+2)*2);
 	} else {
-		gluPerspective(45, (GLfloat)w.width / (GLfloat)w.height, fabs((-w.pan_z+w.dolly))/100, (-w.pan_z + w.dolly+2)*2);
+		gluPerspective(45, (GLfloat)w.width / (GLfloat)w.height, fabs((-w.pan_z+w.dolly))/1000, (-w.pan_z + w.dolly+2)*2);
 	}
 
 
@@ -501,8 +873,8 @@ void Viewer::gc_display() {
 
 
 // 	if (w.immediatemode) {
-		Draw(win);
-		w.redraw=false;
+	Draw(win);
+	w.redraw=false;
 // 	} else {
 // 		if (w.redraw || w.display_list<0) {
 // 			if (w.display_list<0)
@@ -516,6 +888,44 @@ void Viewer::gc_display() {
 // 			glCallList(w.display_list);
 // 		}
 // 	}
+
+
+
+	if (!w.dollying && !w.tracking && !w.panning && w.unsharp_width > 1) {
+		ApplyUnsharp(win);
+	}
+
+
+	// draw the status message
+	glColor3f(0,0,0);
+	glDisable(GL_LIGHTING);
+
+	{
+
+		glDisable(GL_DEPTH_TEST);
+		glMatrixMode(GL_PROJECTION);
+		glPushMatrix();
+		glLoadIdentity();
+		gluOrtho2D(0,w.width,0,w.height);
+
+		glMatrixMode(GL_MODELVIEW);
+		glPushMatrix();
+		glLoadIdentity();
+		glRasterPos3f(35,75,0);
+
+		for(char *c=w.status_msg; (*c && *c!='\n'); c++)
+			glutBitmapCharacter(GLUT_BITMAP_8_BY_13,*c);
+
+		glEnable(GL_DEPTH_TEST);
+
+
+		glMatrixMode(GL_PROJECTION);
+		glPopMatrix();
+
+		glMatrixMode(GL_MODELVIEW);
+		glPopMatrix();
+	}
+
 
 	w.cs.leave();
 
@@ -533,7 +943,7 @@ void Viewer::gc_reshape(int width, int height) {
 	windows[win]->height= height;
 	windows[win]->cs.leave();
 	glViewport(0, 0, width, height);
-	glutPostRedisplay();
+	//	glutPostRedisplay();
 }
 
 
@@ -547,7 +957,7 @@ void Viewer::gc_keyboard(unsigned char key, int x, int y) {
 	last_key = key;
 	last_key_win = win;
 	input_cs.leave();
-	glutPostRedisplay();
+	//	glutPostRedisplay();
 }
 
 
@@ -587,11 +997,9 @@ void Viewer::gc_mouse(int button, int state, int x, int y) {
 			w.pan_depth = depth;
 //			std::cerr<<depth<<std::endl;
 			if (w.pan_depth==1) w.pan_depth=0.999;
-
 			int modifiers = glutGetModifiers();
-
 			if (modifiers == GLUT_ACTIVE_SHIFT || modifiers == GLUT_ACTIVE_CTRL || modifiers == GLUT_ACTIVE_SUPER)
-				w.dollying = true;  // Zoom: Shift, Ctrl, or Command (macOS)
+				w.dollying = true;  // zoom: Shift, Ctrl, or Command (macOS)
 			else if (modifiers == 0)
 				w.tracking = true;
 			else if (modifiers == GLUT_ACTIVE_ALT)
@@ -628,7 +1036,7 @@ void Viewer::gc_mouse(int button, int state, int x, int y) {
 	if (w.sync_cam_out)
 		SaveViewInfo(stdout, win);
 
-	glutPostRedisplay();
+	//	glutPostRedisplay();
 }
 
 
@@ -730,7 +1138,7 @@ void Viewer::gc_motion(int x, int y) {
 		SaveViewInfo(stdout, win);
 
 
-	glutPostRedisplay();
+	//	glutPostRedisplay();
 }
 
 
@@ -742,24 +1150,18 @@ void Viewer::gc_idle() {
 	bool didsomething=false;
 
 	for (unsigned i=0; i<windows.size(); i++) {
-		windows[i]->cs.enter();
-		if (windows[i]->redraw) {
-			didsomething=true;
-			glutPostWindowRedisplay(windows[i]->glut_id);
-		}
-		windows[i]->cs.leave();
-	}
+		
+		 Idle();
 
-	if (!didsomething)
-		thlib::Thread::yield();
+		 windows[i]->cs.enter();
+		 if (windows[i]->redraw) {
+			 didsomething=true;
+			 glutPostWindowRedisplay(windows[i]->glut_id);
+		 }
+		 windows[i]->cs.leave();
+	 }
+
+	 if (!didsomething)
+		 thlib::Thread::yield();
 }
-
-
-
-
-
-
-
-
-
 

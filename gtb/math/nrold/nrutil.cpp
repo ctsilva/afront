@@ -1,3 +1,29 @@
+
+/*
+
+Copyright 2007 University of Utah
+
+
+This file is part of Afront.
+
+Afront is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published
+by the Free Software Foundation; either version 2 of the License,
+or (at your option) any later version.
+
+Afront is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
+02110-1301, USA
+
+*/
+
+
 /* CAUTION: This is the ANSI C (only) version of the Numerical Recipes
    utility file nrutil.c.  Do not confuse this file with the same-named
    file nrutil.c that is supplied in the same subdirectory or archive
@@ -8,6 +34,10 @@
 #include <stdio.h>
 #include <stddef.h>
 #include <stdlib.h>
+
+#include <signal.h>
+#include <unistd.h>
+
 #define NR_END 1
 #define FREE_ARG char*
 
@@ -19,7 +49,8 @@ void nrerror(const char error_text[])
 	fprintf(stderr,"Numerical Recipes run-time error...\n");
 	fprintf(stderr,"%s\n",error_text);
 	fprintf(stderr,"...now exiting to system...\n");
-	exit(1);
+	kill(getpid(), SIGQUIT);
+	//	exit(1);
 }
 
 float *vector(long nl, long nh)

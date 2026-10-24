@@ -1,4 +1,30 @@
 
+/*
+
+Copyright 2007 University of Utah
+
+
+This file is part of Afront.
+
+Afront is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published
+by the Free Software Foundation; either version 2 of the License,
+or (at your option) any later version.
+
+Afront is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
+02110-1301, USA
+
+*/
+
+
+
 
 // the front is just a list of vertices.  by arbitrary convention, the area still to be triangulated
 // is to the left of the front (looking at the next vertex in the list, with surface normal up).
@@ -15,37 +41,54 @@ class Front;
 
 
 
-#define PRIORITY_GROW_EDGE		0
-#define PRIORITY_CONNECT		1
+// these three are mutually exclusive
+#define PRIORITY_GROW_SEED_EDGE     0x01000000
+#define PRIORITY_GROW_EDGE		    0x02000000
+#define PRIORITY_CONNECT		    0x04000000
+
+// can be combined with any of these
+#define PRIORITY_OWA			    0x08000000		// outside working area
+#define PRIORITY_OWB			    0x10000000		// outside working block
+
+#define PRIORITY_FAILSAFE		    0x20000000
+#define PRIORITY_FAILSAFE_WILLFAIL	0x40000000
+#define PRIORITY_FAILSAFE_ANY		(PRIORITY_FAILSAFE | PRIORITY_FAILSAFE_WILLFAIL)
+
+// trumps all
+#define PRIORITY_CONNECTOR          0x80000000
 
 
-#define PRIORITY_OWA			100		// outside working area
-
-#define PRIORITY_FAILSAFE_ANY		0x7ffffff0
-#define PRIORITY_FAILSAFE		0x7ffffffe
-#define PRIORITY_FAILSAFE_WILLFAIL	0x7fffffff
-
-#define FRONT_FLAG_FROM_GROW		1
-#define FRONT_FLAG_BOUNDARY		2
-#define FRONT_FLAG_FEATURE		4
+#define FRONT_FLAG_BOUNDARY		1   // edge's projection when onto boundary (hack for when growth goes outside the domain)
+#define FRONT_FLAG_FEATURE		2   // sharp edges or boundaries
+#define FRONT_FLAG_CONNECTOR    4   // pseudo-edge connecting boundary verts that will be filled in by boundaries in future blocks
+#define FRONT_FLAG_EDGEGROW     8   // was the triangle behind this edge the result of an edge grow (vs connection)
+#define FRONT_FLAG_SEED         16  // an edge that should be grown asap (seed points, boundaries, features)
 
 
 class ProjectionResult {
     public:
     Point3 position;
     Vector3 normal;
+	real_type step;
     volatile int result;   // success/boundary/fail/notfinished...
 };
 
 class FrontElement {
     public:
 
-    typedef std::pair<int,real_type> priority_type;
+    typedef std::pair<unsigned int,real_type> priority_type;
 
 
     FrontElement() { }
     FrontElement(const Point3 &p, const Vector3 &n, int vi, real_type step)
-	: position(p), normal(n), vertindex(vi), priority(0x7fffffff,1e34), max_step(step), flags(0) { }
+	: position(p),
+	  normal(n),
+	  vertindex(vi),
+	  priority(0x7fffffff,1e34),
+	  max_step(step),
+	  flags(0)
+    {
+    }
 
 
     // info about the vertex
@@ -54,6 +97,7 @@ class FrontElement {
 
     // the index for the output file (triangles share vertices)
     int vertindex;
+    int vertindex_l;
 
     // the priority of the edge starting at this vertex
     priority_type priority;
@@ -63,7 +107,6 @@ class FrontElement {
 
     int flags;
 
-	
     ProjectionResult proj_res;
 
 
@@ -112,9 +155,11 @@ class Front {
     private:
     // don't allow copies
     Front(const Front &rhs) {
+	cerr<<"trying to copy a front"<<endl;
 	BREAK;
     }
     Front& operator=(const Front &rhs) {
+	cerr<<"trying to copy a front"<<endl;
 	BREAK;
 	return *this;
     }

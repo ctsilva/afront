@@ -1,3 +1,4 @@
+extern int idealNumThreads; // 2009 guidance.h needs it (declared in main.cpp)
 #include "common.h"
 #include "output_controller_reeb.h"
 #include <utility>

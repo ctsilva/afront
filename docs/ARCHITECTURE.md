@@ -6,7 +6,7 @@ This document describes the internal architecture of the Afront advancing front 
 
 Afront is written in C++ and uses two key language features for flexibility:
 
-- **Templates**: Allow calculations in single or double precision (controlled by `-DREAL_IS_FLOAT`)
+- **Templates**: Allow calculations in single or double precision (`-DREAL_IS_FLOAT` / `-DREAL_IS_DOUBLE`; the build uses double since the 2009 multimaterial code requires it)
 - **Abstract Classes**: Hide surface representation details from the core triangulation algorithm
 
 The implementation uses abstract base classes to separate concerns and allow different surface types (meshes, volumes, point clouds, CSG) to share the same core triangulation code.
@@ -118,6 +118,14 @@ class Surface {
 - **Tetrahedral** (`triangulate_tet.cpp`): Isosurface from irregular grids
 - **MLS** (`triangulate_mls.cpp`): Point cloud reconstruction
 - **CSG** (`triangulate_csg.cpp`): Boolean operations on meshes
+
+**Out-of-core regular grids (2009):** `OOCVolume` in `triangulate_iso.cpp` reads a bricked
+volume (`.nooc` + `.blocks/`, written by `-save_ooc`). `GetNextBlock` walks the blocks in
+Z-order (`sfcurve.h`), builds the block's guidance field from curvature samples whose
+sufficiency is certified by interval arithmetic over the tensor-product B-spline
+(`interval.h`, `spline.h`), classifies the block's components with marching cubes to choose
+seeds, and returns the incremental boundary left by already-meshed neighbours. The thesis
+(sections 4.6-4.7, appendix A) describes the two-level heap and per-block guidance fields.
 
 ---
 
@@ -275,6 +283,8 @@ For out-of-core meshing efficiency:
 - [triangulator.cpp](../src/triangulator.cpp) - Main advancing front loop
 - [guidance.cpp](../src/guidance.cpp) - Guidance field evaluation
 - [front.cpp](../src/front.cpp) - Front data structures
+- [interval.h](../src/interval.h), [spline.h](../src/spline.h) - Interval arithmetic and B-spline bounds for the certified guidance field (2009)
+- [sfcurve.h](../src/sfcurve.h) - Z-order curve for out-of-core block traversal (2009)
 
 ### Surface Implementations
 - [triangulate_mesh.cpp](../src/triangulate_mesh.cpp) - Mesh remeshing
@@ -288,11 +298,11 @@ For out-of-core meshing efficiency:
 - [output_controller_gui.cpp](../src/output_controller_gui.cpp) - OpenGL visualization
 - [output_controller_obj.cpp](../src/output_controller_obj.cpp) - Wavefront OBJ output
 - [output_controller_hhm.cpp](../src/output_controller_hhm.cpp) - Hierarchical mesh output
+- [output_controller_sma.cpp](../src/output_controller_sma.cpp) - Streaming mesh output (`.sma/.smb/.smc/.smd`, via [lib/sm](../lib/sm/)) (2009)
 
 ### Utilities
 - [crease.cpp](../src/crease.cpp) - Sharp feature detection
-- [generaldef.cpp](../src/generaldef.cpp) - General definitions and utilities
-- [rg.cpp](../src/rg.cpp) - Range operations
+- [generaldef.cpp](../src/generaldef.cpp), [rg.cpp](../src/rg.cpp), [output_controller_reeb.cpp](../src/output_controller_reeb.cpp) - Reeb-graph research code from the VGC tree; compiled into a `reeb` library but not used by afront
 - [lsqr.cpp](../src/lsqr.cpp) - Sparse linear solver (for CSG)
 
 ### Data Structures

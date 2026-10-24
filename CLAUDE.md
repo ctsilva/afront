@@ -6,6 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 `afront` is an advancing front triangulation system for surface reconstruction. It creates high-quality triangle meshes from various input types including point clouds, implicit surfaces (isosurfaces), tetrahedral meshes, and existing triangle meshes. The system uses curvature-adaptive guidance fields to control triangle sizing and employs a priority-based front propagation algorithm.
 
+**Which code this is (October 2026):** the sources are the SourceForge CVS head of 2009-03-24 (John Schreiner's out-of-core / interval-arithmetic afront, recovered into `~/src/afront-2009-cvs`), folded over the January 2007 VGC tree this repository started from. `FOLD_NOTES.md` records the fold, `PLAN.md` the integration steps. The sections below that describe 2007-era fixes are kept for history; where a fix was re-applied or dropped on the 2009 code it says so.
+
 ## Build System
 
 ### Prerequisites - macOS
@@ -39,10 +41,12 @@ make -j8
 - **viewer**: OpenGL visualization library (must be in ../lib/viewer)
 - **mlslib**: Moving Least Squares projection library (must be in ../lib/mlslib)
 - **ThreadLib**: Threading library (must be in ../lib/ThreadLib)
+- **sm**: Isenburg streaming-mesh library (lib/sm), used by `output_controller_sma` and `sm_viewer`
+- **rmlslib**, **reeb** (rg.cpp, generaldef.cpp, output_controller_reeb.cpp): VGC-internal code the SourceForge release dropped; still built as libraries but not used by afront (`NO_RMLS` is defined in `src/triangulate_mls.cpp`, main.cpp has no Reeb hooks)
 - **System libraries**: OpenGL, GLU, GLUT, pthread, zlib, X11
 
 ### Compiler Flags
-The code is compiled with: `-DUSENR -DREAL_IS_FLOAT -D_REENTRANT -Wno-c++11-narrowing`
+The code is compiled with: `-DUSENR -DREAL_IS_DOUBLE -D_REENTRANT` plus warning suppressions (see the top-level CMakeLists.txt). `real_type` is double: the 2009 multimaterial code (`TrivariateSpline<double>` call sites in `triangulate_iso.cpp`) does not compile as float.
 
 Note: Exceptions are enabled (removed `-fno-exceptions` and `-DNO_EXCEPTIONS`) to support modern template code.
 
@@ -141,6 +145,8 @@ template<> void SVD<float>(const AMatc<float>&, AMatc<float>&, AVec<float>&, AMa
 - Required on macOS for GUI support
 
 ### 10. GLUT Threading Fix for macOS (CRITICAL)
+
+*Re-applied on the 2009 viewer in October 2026 (commit "Re-port the macOS GUI fix"). The 2009 `viewer.cpp` is ~480 lines larger (unsharp masking, key sending, screenshots), so the patch was redone by hand; the shape is the one described here. In GUI mode `main()` now starts a worker thread that parses the command line and runs the triangulation, and the main thread runs `gui->Go()`.*
 **Files:** `../lib/viewer/viewer.cpp`, `../lib/viewer/viewer.h`, `main.cpp`
 
 **Problem:** Modern macOS requires all GLUT operations (initialization, window creation, and main loop) to run on the application's main thread. The original code spawned a worker thread for GLUT, which causes fatal errors on macOS 10.14+.
@@ -208,6 +214,8 @@ if (use_gui && gui) {
 
 **Recommendation for Future Work:** Replace Numerical Recipes SVD with modern libraries (Eigen, LAPACK) for better numerical stability on modern hardware.
 
+*Status after the 2009 fold: this patch was **not** re-applied. The double-precision 2009 build showed no convergence failures on the test data. Re-apply from commit 0335ac4's parent if they reappear.*
+
 ### 12. VertexVertexIteratorI Isolated Vertex Fix (CRITICAL)
 **File:** `../gtb/graphics/triangle_mesh.cpp:621-631`
 
@@ -233,7 +241,21 @@ tTriangleMesh<T>::VertexVertexIteratorI::VertexVertexIteratorI(const tTriangleMe
 
 **Detection Method:** Used AddressSanitizer (`-fsanitize=address`) to identify the exact location of the heap-buffer-overflow.
 
+### 13. Fixes made while reviving the 2009 tree (October 2026)
+
+All in the git history of `~/src/afront-2009-cvs/work`, carried into the fold commit:
+
+- `lib/sm/filewrapper.h`: `(gzFile)` casts (zlib's gzFile is no longer `void*`).
+- `const` on comparator `operator()` (`OctreeNode::CompareSolidity`, `pt_compare`).
+- `src/guidance.h`: `Trimmer` stored a *reference* to a temporary `GetPointVector` (stack-use-after-scope, crashed the guidance-field build). Now held by value.
+- `src/front.cpp` `Front::Merge`: inserted through `f2` with an iterator into `f1`; with a `std::list` that caches its size (libc++) `f2` looked non-empty with `begin()==end()` and crashed in `UpdateWorkingBlock`. Benign on 2008 GCC whose `size()` was O(n).
+- `src/triangulator.cpp`: the initial-front loop spun forever when no seed could be projected; it now stops when the blocks run out.
+- `src/main.cpp`: `idealNumThreads` defaults to 8 on arm64 too (was gated on `__x86_64__`); an unknown `-outname` extension exits with a message instead of crashing on the first vertex.
+- The isolated-vertex fix (section 12) was ported into the 2009 `triangle_mesh.cpp`.
+
 ## Performance and Threading Characteristics
+
+**Update, October 2026 (2009 code):** the analysis below was measured on the 2007 tree and is obsolete. On the same bunny.off the 2009 code takes 2.5 s with 8 threads and 8.3 s with 1 thread; curvature runs at ~100,000 verts/sec and triangulation at ~19,000 tris/sec. The 2007 build's 21 s came from lock contention in its ThreadLib (42 s of system time), which the 2009 `CriticalSection` (trylock loop) does not have.
 
 ### Thread Utilization Analysis
 
@@ -323,7 +345,7 @@ Basic usage:
 #### Triangulation
 - `tri`: Auto-detect input type and triangulate
 - `tri_mesh [subdiv]`: Triangulate a mesh (with optional Loop subdivision for curvature)
-- `tri_smoothmls [.flf]`: Triangulate MLS surface from point cloud
+- `tri_mls`: Triangulate MLS surface from point cloud (was `tri_smoothmls`)
 - `tri_vol <isoval> [bspline]`: Triangulate volume isosurface
 - `tri_tet <isoval>`: Triangulate tetrahedral mesh isosurface
 
@@ -341,6 +363,14 @@ Basic usage:
 - `gui`: Start GUI
 - `trans`: Enter mesh transformation mode
 
+#### Out-of-core isosurface extraction (2009)
+- `-save_ooc <dir> <name> bx by bz 0 0 0 0 0 0 <sampling>`: brick a volume; writes `<name>.nooc` + `<name>.blocks/`
+- run on `./name.nooc` (give a directory component) with the usual `-tri <iso> bspline`
+- `-reuse_guidance 1`, `-reuse_seeds 1`: reuse the per-block guidance field in `oocgf/`
+- `-prefetch_rings`, `-prefetch_lookahead`, `-max_grab_bag`: block cache control
+- `-marchingcubes <iso> bspline`: marching cubes on the same (bricked) field, for comparison
+- `scripts/blocksize_test.sh`, `scripts/volsize_test.sh`, `scripts/meminfo.py`: the dissertation's experiments
+
 ### Key Parameters
 
 - `rho <value>`: Angle subtended on osculating sphere (controls triangle sizing)
@@ -357,7 +387,7 @@ Basic usage:
 ### Examples
 ```bash
 # Triangulate a point cloud
-./afront points.obj -tri_smoothmls
+./afront points.obj -tri_mls
 
 # Triangulate with features at 45 degrees
 ./afront mesh.m -sharp -0.707 -tri_mesh
@@ -444,6 +474,10 @@ Basic usage:
 - **triangulate_tet.{h,cpp}**: Isosurfaces from tetrahedral meshes
 - **triangulate_csg.{h,cpp}**: Boolean operations on meshes
 
+### Out-of-core volumes (2009)
+
+`triangulate_iso.cpp` has an `OOCVolume` beside the in-core `RegularVolume`. The volume is bricked into blocks (`-save_ooc`), blocks are visited in Z-order (`sfcurve.h`), and `Surface::GetNextBlock` hands the triangulator one block at a time with its guidance field, seeds and the incremental boundary (ghost vertices) left by already-meshed neighbours. The guidance field for a block is built from curvature samples whose sufficiency is certified with interval arithmetic over the tensor-product B-spline (`interval.h`, `spline.h`); `-make_gf` builds one block's field so `scripts/gfdistrib.py` can distribute that over machines. Output goes through `output_controller_sma` so finished triangles stream to disk. Components are classified by marching cubes on the B-spline field before seeding; two objects a voxel apart get joined by a sub-voxel neck that no front can cross. Seed edges project a point `MaxStepLength` away and projection gives up after moving two voxels, so coarse volumes need `-max_step`.
+
 ### Threading Model
 
 - Worker threads handle surface projections in parallel (minor benefit for mesh operations)
@@ -523,3 +557,9 @@ Defined in `common.h`:
 
 ### "triangulate_mls_smooth.cpp not found"
 - Fixed in CMakeLists.txt (should be `triangulate_mls.cpp`)
+
+### "couldn't project seed point" / no triangles
+The ideal edge length (from `rho`) exceeds what the projector will move (two voxels). Use `-max_step 2` on coarse synthetic volumes, or a finer volume.
+
+### GUI opens but nothing happens
+The 2009 GUI starts in "waiting for key" mode; press space to step or see the keyboard help. Batch runs should use `-nogui`.

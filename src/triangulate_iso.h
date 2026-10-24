@@ -1,385 +1,531 @@
 
+/*
+
+Copyright 2007 University of Utah
+
+
+This file is part of Afront.
+
+Afront is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published
+by the Free Software Foundation; either version 2 of the License,
+or (at your option) any later version.
+
+Afront is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
+02110-1301, USA
+
+*/
+
+
+
 #ifndef _TRIANGULATE_ISO
 #define	_TRIANGULATE_ISO
 
+#include "interval.h"
+#include "spline.h"
+#include "sfcurve.h"
 
 
 template <typename T>
-    class TrivariateSpline {
-    public:
-
-    TrivariateSpline() { }
-
-	
-    void SetCoefsCatmullRom(real_type tau=0.5) {
-	CoefsFromMatrix(gtb::tMatrix4<double>(0, 1, 0, 0,
-					      -tau, 0, tau, 0,
-					      2*tau, tau-3, 3-2*tau, -tau,
-					      -tau, 2-tau, tau-2, tau));
-    }
-
-    void SetCoefsBSpline() {
-	CoefsFromMatrix(gtb::tMatrix4<double>( 1/6.0,  4/6.0,  1/6.0, 0/6.0,
-					       -3/6.0,  0/6.0,  3/6.0, 0/6.0,
-					       3/6.0, -6/6.0,  3/6.0, 0/6.0,
-					       -1/6.0,  3/6.0, -3/6.0, 1/6.0));
-    }
-
-
-    T Eval(T xaspect, T yaspect, T zaspect, const T p[4][4][4], T x[3]) const {
-
-	T xscale = 1.0 / xaspect;
-	T yscale = 1.0 / yaspect;
-	T zscale = 1.0 / zaspect;
-
-	T xs[3] = { x[0]*xscale, x[1]*yscale, x[2]*zscale };
-
-	T xpows[4] = { 1, xs[0], xs[0]*xs[0], xs[0]*xs[0]*xs[0] };
-	T ypows[4] = { 1, xs[1], xs[1]*xs[1], xs[1]*xs[1]*xs[1] };
-	T zpows[4] = { 1, xs[2], xs[2]*xs[2], xs[2]*xs[2]*xs[2] };
-
-	T ret=0;
-	for (unsigned i=0; i<coefs.size(); i++) {
-
-	    const TrivariateCoefficients &tc = coefs[i];
-	    T c=0;
-	    for (unsigned j=0; j<tc.coefs.size(); j++) {
-		c += (&p[0][0][0])[tc.coefs[j].first] * tc.coefs[j].second;
-	    }
-
-	    ret += c * xpows[tc.xpow] * ypows[tc.ypow] * zpows[tc.zpow];
-
-	}
-
-	return ret;
-    }
-
-
-    void Gradient(T xaspect, T yaspect, T zaspect, const T p[4][4][4], const T x[3], T gradient[3]) const {
-
-	T xscale = 1.0 / xaspect;
-	T yscale = 1.0 / yaspect;
-	T zscale = 1.0 / zaspect;
-
-	T xs[3] = { x[0]*xscale, x[1]*yscale, x[2]*zscale };
-
-	T xpows[4] = { 1, xs[0], xs[0]*xs[0], xs[0]*xs[0]*xs[0] };
-	T ypows[4] = { 1, xs[1], xs[1]*xs[1], xs[1]*xs[1]*xs[1] };
-	T zpows[4] = { 1, xs[2], xs[2]*xs[2], xs[2]*xs[2]*xs[2] };
-
-	gradient[0]=gradient[1]=gradient[2]=0;
-
-	for (unsigned i=0; i<coefs.size(); i++) {
-
-	    const TrivariateCoefficients &tc = coefs[i];
-	    T c=0;
-	    for (unsigned j=0; j<tc.coefs.size(); j++) {
-		c += (&p[0][0][0])[tc.coefs[j].first] * tc.coefs[j].second;
-	    }
-
-	    if (tc.xpow>0)
-		gradient[0] += c * xscale * tc.xpow * xpows[tc.xpow-1] * ypows[tc.ypow] * zpows[tc.zpow];
-
-	    if (tc.ypow>0)
-		gradient[1] += c * yscale * tc.ypow * xpows[tc.xpow] * ypows[tc.ypow-1] * zpows[tc.zpow];
-
-	    if (tc.zpow>0)
-		gradient[2] += c * zscale * tc.zpow * xpows[tc.xpow] * ypows[tc.ypow] * zpows[tc.zpow-1];
-
-	}
-    }
-
-
-    void Hessian(T xaspect, T yaspect, T zaspect, const T p[4][4][4], const T x[3], gtb::tmat3<T> &hessian) const {
-
-	T xscale = 1.0 / xaspect;
-	T yscale = 1.0 / yaspect;
-	T zscale = 1.0 / zaspect;
-
-	T xs[3] = { x[0]*xscale, x[1]*yscale, x[2]*zscale };
-
-	T xpows[4] = { 1, xs[0], xs[0]*xs[0], xs[0]*xs[0]*xs[0] };
-	T ypows[4] = { 1, xs[1], xs[1]*xs[1], xs[1]*xs[1]*xs[1] };
-	T zpows[4] = { 1, xs[2], xs[2]*xs[2], xs[2]*xs[2]*xs[2] };
-
-	for (int i=0; i<3; i++) {
-	    for (int j=0; j<3; j++) {
-		hessian[i][j] = 0;
-	    }
-	}
-
-	for (unsigned i=0; i<coefs.size(); i++) {
-
-	    const TrivariateCoefficients &tc = coefs[i];
-	    T c=0;
-	    for (unsigned j=0; j<tc.coefs.size(); j++) {
-		c += (&p[0][0][0])[tc.coefs[j].first] * tc.coefs[j].second;
-	    }
-
-	    if (tc.xpow>1)
-		hessian[0][0] += c * xscale * xscale * tc.xpow * (tc.xpow-1) * xpows[tc.xpow-2] * ypows[tc.ypow] * zpows[tc.zpow];
-	    if (tc.ypow>1)
-		hessian[1][1] += c * yscale * yscale * tc.ypow * (tc.ypow-1) * xpows[tc.xpow] * ypows[tc.ypow-2] * zpows[tc.zpow];
-	    if (tc.zpow>1)
-		hessian[2][2] += c * zscale * zscale * tc.zpow * (tc.zpow-1) * xpows[tc.xpow] * ypows[tc.ypow] * zpows[tc.zpow-2];
-
-	    if (tc.xpow>0 && tc.ypow>0) {
-		hessian[1][0] += c * xscale * yscale * tc.xpow * tc.ypow * xpows[tc.xpow-1] * ypows[tc.ypow-1] * zpows[tc.zpow];
-		hessian[0][1] += c * xscale * yscale * tc.xpow * tc.ypow * xpows[tc.xpow-1] * ypows[tc.ypow-1] * zpows[tc.zpow];
-	    }
-	    if (tc.xpow>0 && tc.zpow>0) {
-		hessian[2][0] += c * xscale * zscale * tc.xpow * tc.zpow * xpows[tc.xpow-1] * ypows[tc.ypow] * zpows[tc.zpow-1];
-		hessian[0][2] += c * xscale * zscale * tc.xpow * tc.zpow * xpows[tc.xpow-1] * ypows[tc.ypow] * zpows[tc.zpow-1];
-	    }
-	    if (tc.ypow>0 && tc.zpow>0) {
-		hessian[2][1] += c * yscale * zscale * tc.ypow * tc.zpow * xpows[tc.xpow] * ypows[tc.ypow-1] * zpows[tc.zpow-1];
-		hessian[1][2] += c * yscale * zscale * tc.ypow * tc.zpow * xpows[tc.xpow] * ypows[tc.ypow-1] * zpows[tc.zpow-1];
-	    }
-	}
-    }
-
-
-    void CoefsFromMatrix(const gtb::tMatrix4<T> &m) {
-
-	int indexing[4][4][4];	// for computing the index of a sample
-
-	vector<coefterm> afterZremoval[4][4];
-
-	for (int x=0; x<4; x++) {
-	    for (int y=0; y<4; y++) {
-
-		for (int mr=0; mr<4; mr++) {
-		    for (int mc=0; mc<4; mc++) {
-			afterZremoval[x][y].push_back(coefterm(m[mr][mc],
-							       &indexing[x][y][mc]-&indexing[0][0][0],
-							       0, 0, mr));
-		    }
-		}
-	    }
-	}
-
-	vector<coefterm> afterYremoval[4];
-	for (int x=0; x<4; x++) {
-	    for (int mr=0; mr<4; mr++) {
-		for (int mc=0; mc<4; mc++) {
-		    Append(afterYremoval[x],  MultByScalarPower(afterZremoval[x][mc], m[mr][mc], 0, mr, 0));
-		}
-	    }
-	}
-
-
-	vector<coefterm> afterAll;
-	for (int mr=0; mr<4; mr++) {
-	    for (int mc=0; mc<4; mc++) {
-		Append(afterAll,  MultByScalarPower(afterYremoval[mc], m[mr][mc], mr, 0, 0));
-	    }
-	}
-
-
-
-	coefs.clear();
-	for (int xpow=0; xpow<4; xpow++) {
-	    for (int ypow=0; ypow<4; ypow++) {
-		for (int zpow=0; zpow<4; zpow++) {
-
-		    //					if (xpow+ypow+zpow > 3)
-		    //						continue;
-
-
-		    coefs.push_back(TrivariateCoefficients());
-		    coefs.back().xpow = xpow;
-		    coefs.back().ypow = ypow;
-		    coefs.back().zpow = zpow;
-
-		    for (unsigned i=0; i<afterAll.size(); i++) {
-			if (afterAll[i].xpow==xpow &&
-			    afterAll[i].ypow==ypow &&
-			    afterAll[i].zpow==zpow &&
-			    afterAll[i].coef!=0) {
-			    coefs.back().coefs.push_back(std::pair<int,T>(afterAll[i].sample, afterAll[i].coef));
-			}
-		    }
-		}
-	    }
-	}
-    }
-    private:
-
-    class coefterm {
+	class Array3 {
 	public:
-	coefterm(T c, int s, int _xpow, int _ypow, int _zpow) {
-	    coef=c;
-	    sample=s;
-	    xpow = _xpow;
-	    ypow = _ypow;
-	    zpow = _zpow;
+	Array3() { }
+	Array3(const T &a, const T &b, const T &c) {
+		x[0] = a;
+		x[1] = b;
+		x[2] = c;
 	}
-	T coef;
-	int sample;
-	int xpow;
-	int ypow;
-	int zpow;
-    };
-
-    class TrivariateCoefficients {
-	public:
-	int xpow;
-	int ypow;
-	int zpow;
-	vector< std::pair<int, T> > coefs;
-    };
-
-
-
-    vector<coefterm> MultByScalarPower(const vector<coefterm> &in, T s, int xpow, int ypow, int zpow) {
-	vector<coefterm> out;
-	for (unsigned i=0; i<in.size(); i++) {
-	    out.push_back(in[i]);
-	    out.back().coef *= s;
-	    out.back().xpow += xpow;
-	    out.back().ypow += ypow;
-	    out.back().zpow += zpow;
+	T& operator[](int i) { return x[i]; }
+	const T& operator[](int i) const { return x[i]; }
+	bool operator==(const Array3 &rhs) const {
+		return (x[0]==rhs[0] && 
+				x[1]==rhs[1] && 
+				x[2]==rhs[2]);
 	}
-	return out;
-    }
-
-
-    void Append(vector<coefterm> &v, const vector<coefterm> &a) {
-	for (unsigned i=0; i<a.size(); i++) {
-	    v.push_back(a[i]);
+	bool operator<(const Array3 &rhs) const {
+		for (int i=0; i<3; i++) {
+			if (x[i] < rhs[i])
+				return true;
+			if (x[i] > rhs[i])
+				return false;
+		}
+		return false;
 	}
-    }
-
-
-    vector<TrivariateCoefficients> coefs;
+	T x[3];
 };
 
 
 
+// abstraction of volume interface we need for standard volumes and for out of core volumes
+class Volume : public gtb::tModel<real_type> {
+    public:
+
+    Volume();
+    virtual ~Volume();
+
+    // operations we can perform
+    virtual void SetSplineCoeffs(bool bspline);
+    bool CellSpansValue(const int cell[3], int interior_samples, real_type isovalue) const;
+    bool CellCornerValues(const int cell[3], real_type values[2][2][2], real_type isovalue) const;
+    real_type EvalAtPoint(const Point3 &p) const;
+    bool NormalAtPoint(const Point3 &p, Vector3 &n) const;
+    bool GradientAtPoint(const Point3 &p, Vector3 &n) const;
+    bool CurvatureAtPoint(const Point3 &p, real_type &k1, real_type &k2) const;
+    bool LocalInfo(const Point3 &p, int cell[3], double xl[3]) const;
+    int GetDim(int i) const { return dim[i]; }
+    real_type GetAspect(int i) const { return aspect[i]; }
+    Vector3 GetTranslation() const { return translation; }
+
+
+
+    // abstract interface
+    virtual void Gather(const int cell[3], double nbrs[4][4][4]) const = 0;
+    virtual real_type GetValue(int x, int y, int z) const = 0;
+
+    virtual int NumBlocks() const = 0;
+
+    // THERE MUST NOT BE ANY BLOCK ACCESSES CONCURRENT WITH SetActiveBlock()!!!!
+    virtual void SetActiveBlock(int b) const = 0;
+    virtual int GetActiveBlock() const = 0;
+	virtual int* GetActiveBlock3(int i3[3]) const = 0;
+
+    virtual void GetBlockBox(int block[3], int min[3], int max[3]) const = 0;
+    virtual void GetBlockBox(int min[3], int max[3]) const = 0;
+    virtual void GetBlockMinMax(real_type &min, real_type &max) const = 0;
+
+    static void BlockString(const char *prefix, const int b[3], char string[1024]);
+
+    virtual void WriteValue(int x, int y, int z, FILE *f) const = 0;
+#ifdef HAS_ZLIB
+    virtual void WriteValue(int x, int y, int z, gzFile f) const = 0;
+#endif
+    virtual const char* TypeString() const = 0;
+
+
+    virtual void SetBlockGuidanceField(const vector<Point3> &pts, const vector<real_type> &ideal) = 0;
+    virtual void SetGuidanceFieldDone() = 0;
+
+    virtual void GetFirstBlock(Box3 &box, vector< vector<Point3> > &pts, vector< vector<Vector3> > &norms, vector<bool> &loops, vector< vector<Point3 > > &seeds) const = 0; // THIS CALLS SetActiveBlock()!!!
+    virtual bool GetNextBlock(Box3 &box, vector< vector<Point3> > &pts, vector< vector<Vector3> > &norms, vector<bool> &loops, vector< vector<Point3 > > &seeds) const = 0; // THIS CALLS SetActiveBlock()!!!
+	virtual int  GetBlockForPoint(const Point3 &p) const = 0;
+    virtual void SetBlockSeeds(const vector< vector<Point3> > &bnd_pts, const vector< vector<Vector3> > &bnd_norms, const vector<bool> &loops, const vector< vector<Point3> > &cc_seeds) = 0;
+    virtual void GetBlockSeeds(vector< vector<Point3> > &bnd_pts, vector< vector<Vector3> > &bnd_norms, vector<bool> &loops, vector< vector<Point3> > &cc_seeds) const = 0;
+	virtual int GetNumBlockLoads() const = 0;
+
+    virtual void* OrderedPointTraverseStart(const Point3 &p) = 0;
+    virtual bool OrderedPointTraverseNext(void *ctx, real_type &squared_dist, Point3 &point, real_type &ideal) = 0;
+    virtual void OrderedPointTraverseEnd(void *ctx) = 0;
+
+
+
+    // Model stuff
+    void compute_bounding_box() const {
+		Point3 minp = Point3(0,0,0);
+		Point3 maxp = Point3(GetAspect(0)*(GetDim(0)-1),
+							 GetAspect(1)*(GetDim(1)-1),
+							 GetAspect(2)*(GetDim(2)-1));
+		minp += GetTranslation();
+		maxp += GetTranslation();
+
+		_bounding_box = Box3(Point3(std::min(minp[0], maxp[0]),
+									std::min(minp[1], maxp[1]),
+									std::min(minp[2], maxp[2])),
+							 Point3(std::max(minp[0], maxp[0]),
+									std::max(minp[1], maxp[1]),
+									std::max(minp[2], maxp[2])));
+
+		_is_bounding_box_valid = true;
+    }
+
+
+    void compute_centroid() const {
+		_centroid = bounding_box().centroid();
+		_is_centroid_valid = true;
+    }
+
+    TrivariateSpline<double> spline;
+    TrivariateSpline<double> cspline; // for curvature
+
+    protected:
+    int dim[3];
+    real_type aspect[3];
+    Vector3 translation;
+
+};
+
+
+
+class NHDR {
+    public:
+    enum SourceType {
+		Float,
+		UChar,
+		Short,
+		Unknown,
+    };
+
+    SourceType type;
+    int sizes[3];
+    real_type spacings[3];
+    bool endian;
+    Vector3 translation;
+    char datafile[1024];
+};
 
 
 // a function sampled on a regular grid
-class RegularVolume : public gtb::tModel<real_type> {
+template <typename T>
+	class RegularVolume : public Volume {
 
     public:
     RegularVolume();
     ~RegularVolume();
 
-    bool Read(const char *fname);
-    bool Write(const char *fname) const;
-
-    bool ReadNRRD(const char *fname);
-
-    template <typename SOURCETYPE>
-	bool ReadSource(const char *fname, bool bigendian=false);
-
-    template <typename SOURCETYPE>
-	bool WriteSource(const char *fname) const;
-
-    real_type& GetValue(int x, int y, int z) const { return data[xyz2index(x,y,z)]; }
-    int GetDim(int i) const { return dim[i]; }
-    real_type GetAspect(int i) const { return aspect[i]; }
-    int GetBoundaryCells() const { return boundary_cells; }
-    bool Empty() const { return (data==NULL); }
-
-    void Smooth(int width);
-
-    // Model stuff
-    void compute_bounding_box() const;
-    void compute_centroid() const;
-
-    int xyz2index(int x, int y, int z) const;
+    bool ReadNRRD(const NHDR &nhdr);
+    void FromSegmentation(const Volume &v, int mat);
+	void FromMultiMaterial(vector<Volume*> &vols, int i);
+    void Smoothed(const Volume &v, int width);
 
     void Gather(const int cell[3], double nbrs[4][4][4]) const;
+    real_type GetValue(int x, int y, int z) const;
+    int NumBlocks() const;
+    void SetActiveBlock(int b) const;
+    int GetActiveBlock() const;
+	int* GetActiveBlock3(int i3[3]) const;
+    void GetBlockBox(int block[3], int min[3], int max[3]) const;
+    void GetBlockBox(int min[3], int max[3]) const;
+    void GetBlockMinMax(real_type &min, real_type &max) const;
 
-    bool LocalInfo(const Point3 &p, int cell[3], double xl[3]) const;
+    void WriteValue(int x, int y, int z, FILE *f) const;
+#ifdef HAS_ZLIB
+    void WriteValue(int x, int y, int z, gzFile f) const;
+#endif
+    const char* TypeString() const;
 
-    real_type* GetBSplineValues() const;
-    void SetValues(real_type *v) { memcpy(data, v, sizeof(real_type)*dim[0]*dim[1]*dim[2]); }
-    real_type* CopyValues() const {
-	real_type *ret = new real_type[dim[0]*dim[1]*dim[2]];
-	memcpy(ret, data, sizeof(real_type)*dim[0]*dim[1]*dim[2]);	  
-	return ret;
-    }
+    void SetBlockGuidanceField(const vector<Point3> &pts, const vector<real_type> &ideal);
+    void SetGuidanceFieldDone();
+
+    void GetFirstBlock(Box3 &box, vector< vector<Point3> > &pts, vector< vector<Vector3> > &norms, vector<bool> &loops, vector< vector<Point3> > &seeds) const;
+    bool GetNextBlock(Box3 &box, vector< vector<Point3> > &pts, vector< vector<Vector3> > &norms, vector<bool> &loops, vector< vector<Point3> > &seeds) const;
+	int  GetBlockForPoint(const Point3 &p) const;
+    void SetBlockSeeds(const vector< vector<Point3> > &bnd_pts, const vector< vector<Vector3> > &bnd_norms, const vector<bool> &loops, const vector< vector<Point3> > &cc_seeds);
+    void GetBlockSeeds(vector< vector<Point3> > &bnd_pts, vector< vector<Vector3> > &bnd_norms, vector<bool> &loops, vector< vector<Point3> > &cc_seeds) const;
+	int GetNumBlockLoads() const { return 0; }
+
+    void* OrderedPointTraverseStart(const Point3 &p);
+    bool OrderedPointTraverseNext(void *ctx, real_type &squared_dist, Point3 &point, real_type &ideal);
+    void OrderedPointTraverseEnd(void *ctx);
+
+
+    private:
+    bool ReadSource(const char *fname, bool bigendian=false);
+
+    T *data;
+    T min, max;
+
+    // guidance field stuff
+    GetPointVector<Point3> kdGetPoint;
+    vector<Point3> gfpoints;
+    vector<real_type> ideal_lengths;
+    typedef gtb::KDTree<int, real_type, GetPointVector<Point3> > kdtree_type;
+    kdtree_type *kdtree;
+
+    // stored boundary info
+    vector< vector<Point3> > boundary_pts;
+    vector< vector<Vector3> > boundary_norms;
+    vector<bool> boundary_loops;
+    vector< vector<Point3> > seed_pts;
+};
+
+
+class MultiMaterialVolume : public Volume {
+
+    public:
+    MultiMaterialVolume(const Volume &segmentation);
+    MultiMaterialVolume(const vector<RegularVolume<float> *> &mats);
+    ~MultiMaterialVolume();
+
+
+    virtual void SetSplineCoeffs(bool bspline);
+
+    void Gather(const int cell[3], double nbrs[4][4][4]) const;
+    real_type GetValue(int x, int y, int z) const;
+    int NumBlocks() const;
+    void SetActiveBlock(int b) const;
+    int GetActiveBlock() const;
+	int* GetActiveBlock3(int i3[3]) const;
+    void GetBlockBox(int block[3], int min[3], int max[3]) const;
+    void GetBlockBox(int min[3], int max[3]) const;
+    void GetBlockMinMax(real_type &min, real_type &max) const;
+
+    void WriteValue(int x, int y, int z, FILE *f) const;
+#ifdef HAS_ZLIB
+    void WriteValue(int x, int y, int z, gzFile f) const;
+#endif
+    const char* TypeString() const;
+
+    void SetBlockGuidanceField(const vector<Point3> &pts, const vector<real_type> &ideal);
+    void SetGuidanceFieldDone();
+
+    void GetFirstBlock(Box3 &box, vector< vector<Point3> > &pts, vector< vector<Vector3> > &norms, vector<bool> &loops, vector< vector<Point3> > &seeds) const;
+    bool GetNextBlock(Box3 &box, vector< vector<Point3> > &pts, vector< vector<Vector3> > &norms, vector<bool> &loops, vector< vector<Point3> > &seeds) const;
+	int  GetBlockForPoint(const Point3 &p) const;
+    void SetBlockSeeds(const vector< vector<Point3> > &bnd_pts, const vector< vector<Vector3> > &bnd_norms, const vector<bool> &loops, const vector< vector<Point3> > &cc_seeds);
+    void GetBlockSeeds(vector< vector<Point3> > &bnd_pts, vector< vector<Vector3> > &bnd_norms, vector<bool> &loops, vector< vector<Point3> > &cc_seeds) const;
+	int GetNumBlockLoads() const { return 0; }
+
+    void* OrderedPointTraverseStart(const Point3 &p);
+    bool OrderedPointTraverseNext(void *ctx, real_type &squared_dist, Point3 &point, real_type &ideal);
+    void OrderedPointTraverseEnd(void *ctx);
+
+
+	int MaterialAtPoint(const Point3 &p) const;
+
+	int cur_mat1, cur_mat2;
+	vector< RegularVolume<float>* > matProbs;
+
+    private:
+
+    // guidance field stuff
+    GetPointVector<Point3> kdGetPoint;
+    vector<Point3> gfpoints;
+    vector<real_type> ideal_lengths;
+    typedef gtb::KDTree<int, real_type, GetPointVector<Point3> > kdtree_type;
+    kdtree_type *kdtree;
+};
+
+
+
+// out of core regular grid volume
+class OOCVolume : public Volume {
+
+    public:
+    OOCVolume();
+    ~OOCVolume();
+
+    bool Read(const char *fname);
+
+    void Gather(const int cell[3], double nbrs[4][4][4]) const;
+    real_type GetValue(int x, int y, int z) const;
+    int NumBlocks() const;
+    void SetActiveBlock(int b) const;
+    int GetActiveBlock() const;
+	int* GetActiveBlock3(int i3[3]) const;
+    void GetBlockBox(int block[3], int min[3], int max[3]) const;
+    void GetBlockBox(int min[3], int max[3]) const;
+    void GetBlockMinMax(real_type &min, real_type &max) const;
+
+
+    void WriteValue(int x, int y, int z, FILE *f) const;
+#ifdef HAS_ZLIB
+    void WriteValue(int x, int y, int z, gzFile f) const;
+#endif
+    const char* TypeString() const;
+
+    void SetBlockGuidanceField(const vector<Point3> &pts, const vector<real_type> &ideal);
+    void SetGuidanceFieldDone();
+
+    void GetFirstBlock(Box3 &box, vector< vector<Point3> > &pts, vector< vector<Vector3> > &norms, vector<bool> &loops, vector< vector<Point3> > &seeds) const;
+    bool GetNextBlock(Box3 &box, vector< vector<Point3> > &pts, vector< vector<Vector3> > &norms, vector<bool> &loops, vector< vector<Point3> > &seeds) const;
+	int  GetBlockForPoint(const Point3 &p) const;
+    void SetBlockSeeds(const vector< vector<Point3> > &bnd_pts, const vector< vector<Vector3> > &bnd_norms, const vector<bool> &loops, const vector< vector<Point3> > &cc_seeds);
+    void GetBlockSeeds(vector< vector<Point3> > &bnd_pts, vector< vector<Vector3> > &bnd_norms, vector<bool> &loops, vector< vector<Point3> > &cc_seeds) const;
+	int GetNumBlockLoads() const { return num_block_loads; }
+
+    void* OrderedPointTraverseStart(const Point3 &p);
+    bool OrderedPointTraverseNext(void *ctx, real_type &squared_dist, Point3 &point, real_type &ideal);
+    void OrderedPointTraverseEnd(void *ctx);
+
 
 
     private:
 
-    void GetBSplineValuesParallel(int nt, int id, const TrivariateSpline<double> &spline, real_type *ret) const;
+    static void WriteSeeds(const char *fname, const vector< vector<Point3> > &bnd_pts, const vector< vector<Vector3> > &bnd_norms, const vector<bool> &loops, const vector< vector<Point3> > &cc_seeds);
+    static void ReadSeeds(const char *fname, vector< vector<Point3> > &bnd_pts, vector< vector<Vector3> > &bnd_norms, vector<bool> &loops, vector< vector<Point3> > &cc_seeds);
 
-    void GenSphere();
 
-    int dim[3];
-    real_type aspect[3];
-    real_type *data;
-    int boundary_cells;
+    char block_prefix[1024];
+    class BlockData {
+		public:
+		BlockData() : rv(NULL), load_stamp(-1), ordered_traverse_refcount(0) { }
+		~BlockData() { if (rv) delete rv; }
+
+		Volume *rv; // really RegularVolume<>'s
+		int64 load_stamp;
+		int ordered_traverse_refcount;
+    };
+
+
+    int blocksize[3];
+    int nblocks[3];
+
+    // must be thread safe!
+    void BlockString(const int b[3], char string[1024]) const;
+    void BlockDim(const int b[3], int d[3]) const;
+
+    bool BlockInActiveRegion(const int block[3]) const;
+    BlockData& BeginBlockAccess(const int block[3]) const;
+    void EndBlockAccess(const int block[3]) const;
+
+
+    mutable thlib::CSObject cs;
+    mutable vector< vector< vector<BlockData> > > blocks;
+    mutable volatile int64 blockToLoadASAP;
+
+	int num_block_loads;
+	
+
+    mutable int active_index;
+    mutable int active_block[3];
+    mutable int64 active_zindex;
+
+    mutable volatile bool active_region_loading;
+
+	// we use a condition variable to wake up the fetching thread
+	mutable volatile int need_fetch_work; // 0=no work, 1=work, 2=kill
+#ifndef WIN32
+	mutable pthread_mutex_t fetch_mutex;
+	mutable pthread_cond_t fetch_condition;
+#endif
+	bool FetcherWait();
+	void WakeupFetcher(bool kill=false) const;
+
+
+    void DrawBlock(const Array3<int> &b, const Point3 &color) const;
+    void DrawLoaded(std::set<Array3<int> > &prefetched,
+					std::set<Array3<int> > &grab_bag,
+					vector< Array3<int> > &prefetch_list) const;
+    void ValidateFetchState(std::set<Array3<int> > &prefetched,
+							std::set<Array3<int> > &grab_bag,
+							vector< Array3<int> > &prefetch_list) const;
+
+    thlib::Thread *prefetcher;
+    int64 load_counter;
+
+    void* PrefetchMain();
+    static void* PrefetchMain_s(void *t) {
+		return ((OOCVolume*)t)->PrefetchMain();
+    }
+    void LoadBlock(const int b[3]);
+    void RemoveLRU(std::set< Array3<int> > &bag);
+  
+
+    class OrderedTraverseInfo {
+		public:
+
+		bool operator>(const OrderedTraverseInfo &rhs) const {
+			return (neg_dist_squared>rhs.neg_dist_squared);
+		}
+		bool operator<(const OrderedTraverseInfo &rhs) const {
+			return (neg_dist_squared<rhs.neg_dist_squared);
+		}
+
+		real_type neg_dist_squared;
+		int ring;
+
+		Array3<int> block;
+		Point3 p;
+		real_type ideal;
+    };
+
+	class OrderedTraverseContext {
+		public:
+		gtb::fast_pq<OrderedTraverseInfo>  pq;
+		std::map< Array3<int>, void*> subctx;
+		Point3 p;
+	};
+
+    void GetShellBlocks(int block[3], int shell, vector< Array3<int> > &shell_blocks) const;
+    real_type DistToRingBoundary(const Point3 &p, int ring) const;
+    real_type DistToBlock(int block[3], const Point3 &p) const;
+
+    volatile bool guidance_computed;
 };
 
+Volume* VolumeRead(const char *fname);
 
 
 
 
 class IsoSurfaceProjector : public SurfaceProjector {
     public:
-    IsoSurfaceProjector(const RegularVolume &vol, real_type iso, bool bspline);
+    IsoSurfaceProjector(const Volume &vol, real_type iso);
     virtual ~IsoSurfaceProjector();
-    int ProjectPoint(const FrontElement &base1, const FrontElement &base2, const Point3 &fp, const Vector3 &fn, Point3 &tp, Vector3 &tn) const;
+    int ProjectPoint(const FrontElement &base1, const FrontElement &base2, const Point3 &fp, const Vector3 &fn, Point3 &tp, Vector3 &tn, real_type *curvature) const;
     int ProjectPoint(const Point3 &fp, Point3 &tp, Vector3 &tn) const;
-    int ProjectPointInCell(const Point3 &fp, Point3 &tp, Vector3 &tn) const;
+    int ProjectPoint(const Point3 &fp, Point3 &tp, Vector3 &tn, const Vector3 *plane) const;
+    int ProjectPoint(const Point3 &fp, Point3 &tp, Vector3 &tn, const Point3 &center, const Vector3 &axis) const;
+
+    void GetFirstBlock(Box3 &box, vector< vector<Point3> > &pts, vector< vector<Vector3> > &norms, vector<bool> &loops, vector< vector<Point3 > > &seeds) const {
+		volume.GetFirstBlock(box, pts, norms, loops, seeds);
+    }
+    bool GetNextBlock(Box3 &box, vector< vector<Point3> > &pts, vector< vector<Vector3> > &norms, vector<bool> &loops, vector< vector<Point3 > > &seeds) const {
+		return volume.GetNextBlock(box, pts, norms, loops, seeds);
+    }
+	int  GetBlockForPoint(const Point3 &p) const {
+		return volume.GetBlockForPoint(p);
+	}
+
 
     real_type GetIsoValue() const { return isovalue; }
 
     private:
 
     real_type isovalue;
-    TrivariateSpline<double> spline;
-    const RegularVolume &volume;
+    const Volume &volume;
 
 
 
     class RingEval {
 
-	public:
-	RingEval(const IsoSurfaceProjector &t, const Point3 &c, const Vector3 &u, const Vector3 &v) :
-	hit_boundary(false), isp(t), center(c), udir(u), vdir(v) { last_cell[0] = last_cell[1] = last_cell[2] = -1; }
+		public:
+		RingEval(const IsoSurfaceProjector &t, const Point3 &c, const Vector3 &u, const Vector3 &v) :
+			isp(t), center(c), udir(u), vdir(v) { last_cell[0] = last_cell[1] = last_cell[2] = -1; }
 
+		Point3 point(real_type theta) const {
+			return center + (real_type)cos(theta)*udir + (real_type)sin(theta)*vdir;
+		}
 
-	real_type operator()(real_type theta) {
-	    Point3 x = center + (real_type)cos(theta)*udir + (real_type)sin(theta)*vdir;
+		real_type operator()(real_type theta) {
+			Point3 x = point(theta);
 	    
-	    int this_cell[3];
-	    double xl[3];	// local coordinate
-	    if (!isp.volume.LocalInfo(x, this_cell, xl)) {
-		hit_boundary = true;
-		return 1e34;
-	    }
+			int this_cell[3];
+			double xl[3];	// local coordinate
+
+			isp.volume.LocalInfo(x, this_cell, xl);
 	    
-	    if (this_cell[0]!=last_cell[0] || this_cell[1]!=last_cell[1] || this_cell[2]!=last_cell[2]) {
+			if (this_cell[0]!=last_cell[0] || this_cell[1]!=last_cell[1] || this_cell[2]!=last_cell[2]) {
 	      
-		isp.volume.Gather(this_cell, nbrs);
+				isp.volume.Gather(this_cell, nbrs);
 	      
-		last_cell[0]=this_cell[0];
-		last_cell[1]=this_cell[1];
-		last_cell[2]=this_cell[2];
-	    }
+				last_cell[0]=this_cell[0];
+				last_cell[1]=this_cell[1];
+				last_cell[2]=this_cell[2];
+			}
 
 
-	    double e = isp.spline.Eval(isp.volume.GetAspect(0),
-				       isp.volume.GetAspect(1),
-				       isp.volume.GetAspect(2),
-				       nbrs, xl);
+			double e = isp.volume.spline.Eval(isp.volume.GetAspect(0),
+											  isp.volume.GetAspect(1),
+											  isp.volume.GetAspect(2),
+											  nbrs, xl);
 
-	    return (real_type)(e - isp.isovalue);
-	}
+			return (real_type)(e - isp.isovalue);
+		}
 
         
-	const IsoSurfaceProjector &isp;
-	int last_cell[3]; 
-	double nbrs[4][4][4];
+		const IsoSurfaceProjector &isp;
+		int last_cell[3]; 
+		double nbrs[4][4][4];
 
-	bool hit_boundary;
-	Point3 center;
-	Vector3 udir, vdir;
+		Point3 center;
+		Vector3 udir, vdir;
     };
 };
 
@@ -391,50 +537,67 @@ class IsoSurfaceProjector : public SurfaceProjector {
 class IsoSurfaceGuidanceField : public GuidanceField {
     public:
 
-    IsoSurfaceGuidanceField(IsoSurfaceProjector &projector, const RegularVolume &vol, bool bspline, real_type rho, real_type min_step, real_type max_step, real_type reduction);
+    IsoSurfaceGuidanceField(IsoSurfaceProjector &projector, Volume &vol,
+							real_type rho, real_type min_step, real_type max_step, real_type reduction, int block=-1);
+    IsoSurfaceGuidanceField(IsoSurfaceProjector &projector, MultiMaterialVolume &vol, vector< vector<Point3> > &loops, const vector< vector<int> > &loop_mats,
+							real_type rho, real_type min_step, real_type max_step, real_type reduction);
     ~IsoSurfaceGuidanceField();
 
-    int ClosestPoint(const Point3 &p);
-    void OrderedPointTraverseStart(const Point3 &p);
-    int OrderedPointTraverseNext(real_type &squared_dist);
-    void OrderedPointTraverseEnd();
-    const Point3& PointLocation(int i) const;
-    int NumPoints() const;
+    // we basically implement all this in the Volume class, so this stuff just passes it along
+    void* OrderedPointTraverseStart(const Point3 &p);
+    bool OrderedPointTraverseNext(void *ctx, real_type &squared_dist, Point3 &point, real_type &ideal);
+    void OrderedPointTraverseEnd(void *ctx);
 
     void Extract(vector<Point3> &pts, vector<Vector3> &norms, vector<real_type> &rad);
 
-    real_type EvalAtPoint(const Point3 &p) const;
-    bool NormalAtPoint(const Point3 &p, Vector3 &n) const;
-    bool CurvatureAtPoint(const Point3 &p, real_type &k1, real_type &k2) const;
+    static void WriteGuidance(const char *fname, const vector<Point3> &pts, const vector<real_type> &ideal);
+    static void ReadGuidance(const char *fname, vector<Point3> &pts, vector<real_type> &ideal);
+
 
     private:
 
-    void BuildGuidanceParallel(int nt, int id, real_type isovalue, IsoSurfaceProjector &projector, const real_type *values);
+    void BuildGuidanceParallel(int nt, int id, CSObject &cs, real_type isovalue, IsoSurfaceProjector &projector, vector<Point3> &pts, vector<real_type> &ideals) const;
+    void BuildMultiGuidanceParallel(int nt, int id, CSObject &cs, MultiMaterialVolume &volume, IsoSurfaceProjector &projector, vector<Point3> &pts, vector<real_type> &ideals) const;
 
-    TrivariateSpline<double> spline;
-    const RegularVolume &volume;
 
-    class GetPoint {
-	public:
-	vector<Point3> allpoints;
-	GetPoint() {}
-	const Point3& operator()(unsigned idx) const {
-	    return allpoints[idx];
-	}
-    };
+	Interval BoundSpline(const double nbrs[4][4][4], const double coefs[4][4][4], const int partial[3], const Interval xspan_s[3], int dx_sign, int dy_sign, int dz_sign) const;
+	void SampleCell(int id, int cell[3], double nbrs[4][4][4], double coefs[4][4][4],
+					const Interval xspan_s[3], IsoSurfaceProjector &projector, 
+					vector<Point3> &pts, vector<real_type> &ideals, 
+					const int third_sign[3][3][3],
+					int depth=0) const;
 
-    typedef gtb::KDTree<int, real_type, GetPoint> kdtree_type;
-    kdtree_type *kdtree;
-    GetPoint kdGetPoint;
-    kdtree_type::OrderedIncrementalTraverse *kdOrderedTraverse;
+	struct a444_wrap { real_type n[4][4][4]; };
+	void SampleCell(int id, int cell[3], vector<a444_wrap> &nbrs, vector<a444_wrap> &coefs, int considerbits,
+					const Interval xspan_s[3], IsoSurfaceProjector &projector, MultiMaterialVolume &volume,
+					vector<Point3> &pts, vector<real_type> &ideals, 
+					int depth=0) const;
+	
 
-    vector<Vector3> *guidanceNormals;
+	int BoundaryRecursionDepth(int axis, double nbrs[4][4][4], double coefs[4][4][4], real_type isovalue, const Interval xspan[3], int depth) const;
+	void GetBlockFaceBoundaries(real_type isovalue, int axis, bool min, vector< vector<Point3> > &bsegments, vector<bool> &bloops) const;
+	bool AtMostSingleIntersection(double nbrs[4][4][4], const Point3 &x1, const Point3 &x2, real_type isovalue) const;
+
+
+    Volume &volume;
 };
 
 
 
 
-void MarchingCubes(const RegularVolume &v, TriangulatorController &tc, real_type isovalue);
+#define MC_VERT_TYPE_XMIN 0x01
+#define MC_VERT_TYPE_XMAX 0x02
+#define MC_VERT_TYPE_YMIN 0x04
+#define MC_VERT_TYPE_YMAX 0x08
+#define MC_VERT_TYPE_ZMIN 0x10
+#define MC_VERT_TYPE_ZMAX 0x20
+
+void MarchingCubes(const Volume &v, TriangulatorController &tc, real_type isovalue, bool rootfinding=false, int mc_block=-1, vector<int64> *intersected_cells=NULL, vector<int> *vertex_types=NULL);
+
+void MarchingCubesStats(const Volume &v, TriangulatorController *tc, real_type isovalue,
+						real_type &cellcount, real_type &wcellcount,
+						real_type &tricount, real_type &wtricount,
+						real_type &area, real_type &warea);
 
 
 

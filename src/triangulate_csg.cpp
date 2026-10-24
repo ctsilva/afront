@@ -1,6 +1,33 @@
 
+/*
+
+Copyright 2007 University of Utah
+
+
+This file is part of Afront.
+
+Afront is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published
+by the Free Software Foundation; either version 2 of the License,
+or (at your option) any later version.
+
+Afront is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
+02110-1301, USA
+
+*/
+
+
+
 
 #include "common.h"
+#include "parallel.h"
 #include "guidance.h"
 #include "triangulator.h"
 #include "triangulate_mesh.h"
@@ -11,7 +38,7 @@
 
 
 MeshCSGGuidanceField::MeshCSGGuidanceField(int curv_sub, const TriangleMesh &mesh1, const TriangleMesh &mesh2, const vector<int> pointsides[2], vector< vector<Point3> > &curves, real_type rho, real_type min_step, real_type max_step, real_type reduction)
-    : GuidanceField(rho, min_step, max_step, reduction), kdGetPoint(), kdOrderedTraverse(NULL) {
+    : GuidanceField(rho, min_step, max_step, reduction), kdGetPoint() {
 
 
     // use the regular guidance field to find the point curvatures
@@ -42,7 +69,7 @@ MeshCSGGuidanceField::MeshCSGGuidanceField(int curv_sub, const TriangleMesh &mes
 		weights.push_back(1);
 	    }
 
-	    ideal_length.push_back(MaxCurvatureToIdeal(edge_curvature(cpts, weights)));
+	    ideal_length.push_back(MaxCurvatureToIdeal(edge_curvature(cpts, weights, cpts.size()/2)));
 	    kdGetPoint.allpoints.push_back(curves[c][cv]);
 	}
 
@@ -59,43 +86,30 @@ MeshCSGGuidanceField::MeshCSGGuidanceField(int curv_sub, const TriangleMesh &mes
 
 
 MeshCSGGuidanceField::~MeshCSGGuidanceField() {
-    if (kdOrderedTraverse) delete kdOrderedTraverse;
     delete kdtree;
 }
 
 
-int MeshCSGGuidanceField::ClosestPoint(const Point3 &p) {
-    return kdtree->FindMin(p);
+
+void* MeshCSGGuidanceField::OrderedPointTraverseStart(const Point3 &p) {
+	return new kdtree_type::OrderedIncrementalTraverse(*kdtree, p);
 }
 
 
-void MeshCSGGuidanceField::OrderedPointTraverseStart(const Point3 &p) {
-
-    if (kdOrderedTraverse)
-	delete kdOrderedTraverse;
-    kdOrderedTraverse = new kdtree_type::OrderedIncrementalTraverse(*kdtree, p);
+bool MeshCSGGuidanceField::OrderedPointTraverseNext(void *ctx, real_type &squared_dist, Point3 &point, real_type &ideal) {
+	kdtree_type::OrderedIncrementalTraverse *kdOrderedTraverse = (kdtree_type::OrderedIncrementalTraverse*)ctx;
+    if (kdOrderedTraverse->empty()) return false;
+    int n = kdOrderedTraverse->GetNext(squared_dist);
+    point = kdGetPoint(n);
+    ideal = ideal_length[n];
+    return true;
 }
 
-int MeshCSGGuidanceField::OrderedPointTraverseNext(real_type &squared_dist) {
-    if (kdOrderedTraverse->empty()) return -1;
-    return kdOrderedTraverse->GetNext(squared_dist);
-}
-
-void MeshCSGGuidanceField::OrderedPointTraverseEnd() {
+void MeshCSGGuidanceField::OrderedPointTraverseEnd(void *ctx) {
+	kdtree_type::OrderedIncrementalTraverse *kdOrderedTraverse = (kdtree_type::OrderedIncrementalTraverse*)ctx;
     delete kdOrderedTraverse;
-    kdOrderedTraverse = NULL;
 }
 
-
-
-const Point3& MeshCSGGuidanceField::PointLocation(int i) const {
-    return kdGetPoint(i);
-}
-
-
-int MeshCSGGuidanceField::NumPoints() const {
-    return (int)kdGetPoint.allpoints.size();
-}
 
 
 void MeshCSGGuidanceField::Extract(vector<Point3> &pts, vector<Vector3> &norms, vector<real_type> &rad) {
@@ -690,7 +704,7 @@ void MeshCSGGuidanceField::BlendGuidance(bool blend, const TriangleMesh* meshes[
 
 
 MeshPSCSGGuidanceField::MeshPSCSGGuidanceField(int curv_sub, const TriangleMesh &mesh, const surfel_set &points, CProjection &psprojector, vector< vector<Point3> > &curves, real_type rho, real_type min_step, real_type max_step, real_type reduction, int adamson)
-    : GuidanceField(rho, min_step, max_step, reduction), kdGetPoint(), kdOrderedTraverse(NULL) {
+    : GuidanceField(rho, min_step, max_step, reduction), kdGetPoint() {
 
 
 
@@ -732,7 +746,7 @@ MeshPSCSGGuidanceField::MeshPSCSGGuidanceField(int curv_sub, const TriangleMesh 
 		weights.push_back(1);
 	    }
 
-	    ideal_length.push_back(MaxCurvatureToIdeal(edge_curvature(cpts, weights)));
+	    ideal_length.push_back(MaxCurvatureToIdeal(edge_curvature(cpts, weights, cpts.size()/2)));
 	    kdGetPoint.allpoints.push_back(curves[c][cv]);
 	}
     }
@@ -748,42 +762,34 @@ MeshPSCSGGuidanceField::MeshPSCSGGuidanceField(int curv_sub, const TriangleMesh 
 
 
 MeshPSCSGGuidanceField::~MeshPSCSGGuidanceField() {
-    if (kdOrderedTraverse) delete kdOrderedTraverse;
     delete kdtree;
 }
 
 
-int MeshPSCSGGuidanceField::ClosestPoint(const Point3 &p) {
-    return kdtree->FindMin(p);
+void* MeshPSCSGGuidanceField::OrderedPointTraverseStart(const Point3 &p) {
+    return new kdtree_type::OrderedIncrementalTraverse(*kdtree, p);
 }
 
 
-void MeshPSCSGGuidanceField::OrderedPointTraverseStart(const Point3 &p) {
-
-    if (kdOrderedTraverse)
-	delete kdOrderedTraverse;
-    kdOrderedTraverse = new kdtree_type::OrderedIncrementalTraverse(*kdtree, p);
-}
-
-int MeshPSCSGGuidanceField::OrderedPointTraverseNext(real_type &squared_dist) {
-    if (kdOrderedTraverse->empty()) return -1;
+int MeshPSCSGGuidanceField::OrderedPointTraverseNext(void *ctx, real_type &squared_dist) {
+	kdtree_type::OrderedIncrementalTraverse *kdOrderedTraverse = (kdtree_type::OrderedIncrementalTraverse*)ctx;
+    if (kdOrderedTraverse->empty()) return false;
     return kdOrderedTraverse->GetNext(squared_dist);
 }
 
-void MeshPSCSGGuidanceField::OrderedPointTraverseEnd() {
+bool MeshPSCSGGuidanceField::OrderedPointTraverseNext(void *ctx, real_type &squared_dist, Point3 &point, real_type &ideal) {
+	kdtree_type::OrderedIncrementalTraverse *kdOrderedTraverse = (kdtree_type::OrderedIncrementalTraverse*)ctx;
+    if (kdOrderedTraverse->empty()) return false;
+    int n = kdOrderedTraverse->GetNext(squared_dist);
+    point = kdGetPoint(n);
+    ideal = ideal_length[n];
+    return true;
+}
+
+
+void MeshPSCSGGuidanceField::OrderedPointTraverseEnd(void *ctx) {
+	kdtree_type::OrderedIncrementalTraverse *kdOrderedTraverse = (kdtree_type::OrderedIncrementalTraverse*)ctx;
     delete kdOrderedTraverse;
-    kdOrderedTraverse = NULL;
-}
-
-
-
-const Point3& MeshPSCSGGuidanceField::PointLocation(int i) const {
-    return kdGetPoint(i);
-}
-
-
-int MeshPSCSGGuidanceField::NumPoints() const {
-    return (int)kdGetPoint.allpoints.size();
 }
 
 
@@ -1027,17 +1033,17 @@ void MeshPSCSGGuidanceField::InitPointSides(const TriangleMesh &m, const surfel_
     // get all the mesh points to check
     for (int l=0; l<(int)loops.size(); l++) {
 	for (int ll=0; ll<(int)loops[l].size(); ll++) {
-	    OrderedPointTraverseStart(loops[l][ll]);
+	    void *ctx = OrderedPointTraverseStart(loops[l][ll]);
 	    while(1) {
 		real_type sdist;
-		int next = OrderedPointTraverseNext(sdist);
+		int next = OrderedPointTraverseNext(ctx, sdist);
 		if (next < 0) break;
 		if (sqrt(sdist) > 0.003) break;
 		if (next < (int)m.verts.size()) {
 		    sides[next] = 10;
 		}
 	    }
-	    OrderedPointTraverseEnd();
+	    OrderedPointTraverseEnd(ctx);
 	}
     }
     cerr<<"got mesh points to check"<<endl;
@@ -1057,11 +1063,11 @@ void MeshPSCSGGuidanceField::InitPointSides(const TriangleMesh &m, const surfel_
 	if (sides[v] != 10) continue;
 	sides[v] = 0;
 
-	OrderedPointTraverseStart(m.verts[v].point);
+	void *ctx = OrderedPointTraverseStart(m.verts[v].point);
 
 	while(1) {
 	    real_type sdist;
-	    int next = OrderedPointTraverseNext(sdist);
+	    int next = OrderedPointTraverseNext(ctx, sdist);
 	    if (next < 0) break;
 	    //			if (sqrt(sdist) > 0.01) break;
 	    if (next >= (int)m.verts.size() && next <(int)m.verts.size()+(int)points.size()) {
@@ -1074,7 +1080,7 @@ void MeshPSCSGGuidanceField::InitPointSides(const TriangleMesh &m, const surfel_
 		break;
 	    }
 	}
-	OrderedPointTraverseEnd();
+	OrderedPointTraverseEnd(ctx);
 
 	if (sides[v] < 0) sides[v]=-2;
 	else if (sides[v] > 0) sides[v]=2;

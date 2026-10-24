@@ -1,3 +1,29 @@
+
+/*
+
+Copyright 2007 University of Utah
+
+
+This file is part of Afront.
+
+Afront is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published
+by the Free Software Foundation; either version 2 of the License,
+or (at your option) any later version.
+
+Afront is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
+02110-1301, USA
+
+*/
+
+
 #include <gtb/gtb.hpp>
 #include <gtb/graphics/triangle_mesh.h>
 
@@ -159,6 +185,45 @@ bool tTriangleMesh<T>::read_a_line(FILE* f, char* line, int maxlinelen)
     else return true;
 }
 
+
+// read a .sma streaming mesh format (to in-core)
+template <class T>
+bool tTriangleMesh<T>::ReadSMA(const char *fname) 
+{
+    afree<FILE*> f(fopen(fname, "r"), fclose);
+    if (f==0) {
+	cerr<<"couldn't open file "<<fname<<endl;
+	return false;
+    }
+
+    char line[2048];
+
+    while (read_a_line(f, line, 2048)) {
+	if (line[0] == 'v') {
+	    float x,y,z;
+	    sscanf(line, "v %f %f %f", &x, &y, &z);
+	    verts.push_back(TriangleMeshVertex(Point3(x, y, z)));
+	} else if (line[0] == 'f') {
+	    
+	    int vi[3];
+	    sscanf(line, "f %d %d %d", vi, vi+1, vi+2);
+	    vi[0]--;
+	    vi[1]--;
+	    vi[2]--;
+	    faces.push_back(TriangleMeshFace(vi));
+	}
+    }
+
+    // we've read all the data - build the actual structures now
+    std::vector<int> facemap, vertmap;
+    IdentityMap(facemap, faces.size());
+    IdentityMap(vertmap, verts.size());
+    build_structures(facemap, vertmap);
+
+    return true;
+}
+
+
 // read a .off file
 template <class T>
 bool tTriangleMesh<T>::ReadOFF(const char *fname) 
@@ -283,6 +348,7 @@ bool tTriangleMesh<T>::Read(const char *fname)
     if (pdot == 0) return false;
     if (stricmp(pdot+1, "m") == 0) return ReadHHM(fname);
     else if (stricmp(pdot+1, "off") == 0) return ReadOFF(fname);
+    else if (stricmp(pdot+1, "sma") == 0) return ReadSMA(fname);
     else return false;
 }
 
@@ -352,7 +418,6 @@ void tTriangleMesh<T>::build_structures(const std::vector<int> &facemap, const s
 	}
 
 	// set the somefaces
-	cerr<<"setting somefaces"<<endl;
 	for (typename vertex_list::iterator v=verts.begin(); v!=verts.end(); ++v) {
 		v->someface = -1;
 	}
@@ -364,7 +429,6 @@ void tTriangleMesh<T>::build_structures(const std::vector<int> &facemap, const s
 
 
 	// build the adjacency info
-	cerr<<"finding neighbors"<<endl;
 	vector< vector<int> > vertfaces(verts.size());
 	for (unsigned i=0; i<vertfaces.size(); i++) {
 		vertfaces[i].reserve(7);
@@ -402,13 +466,26 @@ void tTriangleMesh<T>::build_structures(const std::vector<int> &facemap, const s
 
 
 	if (nonmanifold) {
-	    cerr<<"skipping setting normals due to nonmanifoldness"<<endl;
+	    cerr<<"multi-pass setting normals due to nonmanifoldness"<<endl;
+
+		for (int v=0; v<verts.size(); v++) {
+			verts[v].normal = Vector3(0,0,0);
+		}
+
+		for (int f=0; f<faces.size(); f++) {
+			Vector3 norm = FaceNormal(faces[f]);
+			verts[faces[f].verts[0]].normal += norm;
+			verts[faces[f].verts[1]].normal += norm;
+			verts[faces[f].verts[2]].normal += norm;
+		}
+
+		for (int v=0; v<verts.size(); v++) {
+			verts[v].normal.normalize();
+		}
+
 	} else {
-	    cerr<<"setting normals"<<endl;
 	    SetNormals();
 	}
-
-	cerr<<"done"<<endl;
 
 
 	tModel<T>::invalidate_all();
@@ -621,8 +698,8 @@ template<class T>
 tTriangleMesh<T>::VertexVertexIteratorI::VertexVertexIteratorI(const tTriangleMesh<T> &_mesh, int vi) : vfi(_mesh, vi) {
 	first = true;
 	onedge = false;
-	// BUG FIX: Check if vertex has any faces before dereferencing
-	// Isolated vertices (someface==-1) would cause *vfi to return -1, leading to out-of-bounds access
+	// Isolated vertices (someface==-1) have no face: *vfi would be -1 and
+	// faces[-1] a heap-buffer-overflow (fix from the 2007 revival, Oct 2025).
 	if (!vfi.done()) {
 		int ff = *vfi;
 		int v = _mesh.faces[ff].VertIndex(vi);

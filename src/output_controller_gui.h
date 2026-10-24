@@ -1,3 +1,29 @@
+
+/*
+
+Copyright 2007 University of Utah
+
+
+This file is part of Afront.
+
+Afront is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published
+by the Free Software Foundation; either version 2 of the License,
+or (at your option) any later version.
+
+Afront is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
+02110-1301, USA
+
+*/
+
+
 #ifndef __OUTPUT_CONTROLLER_GUI_H
 #define __OUTPUT_CONTROLLER_GUI_H
 
@@ -18,15 +44,18 @@ public:
 	// viewer functions that need to be implemented
 	void Init(int win);
 	void Draw(int win);
+	void Idle() { }
 	void Key(int win, unsigned char key);
 	void Mouse(int win, int button, int motion, int wx, int wy, float depth, float x, float y, float z);
 	void BoundingSphere(int win, float &x, float &y, float &z, float &r);
-        void PassiveMotion(int win, int wx, int wy, float x, float y, float z);
+	void PassiveMotion(int win, int wx, int wy, float x, float y, float z);
 
 
 	// output functions that need to be implemented
     void AddVertex(int index, const Point3 &p, const Vector3 &n, bool boundary);
     void AddTriangle(int index, int v1, int v2, int v3);
+    void FinalizeVertex(int index) { if (child) child->FinalizeVertex(index); }
+
     void Finish() { if (child) child->Finish(); }
 
 
@@ -34,7 +63,6 @@ public:
 
 	bool GetWaitForUser() const { return WaitForUser; }
 	void MeshEditMode(TriangleMesh meshes[2]);
-
 
 private:
 
@@ -47,6 +75,7 @@ private:
 	int drawMesh;
 	bool drawNormals;
 	bool drawBoundaries;
+	bool drawFlat;
 	bool drawGuidance;
 	bool drawFront;
 	bool drawFence;

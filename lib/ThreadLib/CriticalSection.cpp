@@ -1,4 +1,30 @@
 
+/*
+
+Copyright 2007 University of Utah
+
+
+This file is part of Afront.
+
+Afront is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published
+by the Free Software Foundation; either version 2 of the License,
+or (at your option) any later version.
+
+Afront is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
+02110-1301, USA
+
+*/
+
+
+
 #include "stdafx.h"
 
 #include "CriticalSection.h"
@@ -38,7 +64,7 @@ CSObject::CSObject()
 {
     pthread_mutexattr_t attr;
     pthread_mutexattr_init(&attr);
-#ifdef __APPLE__
+    #ifdef __APPLE__
     pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
 #else
     pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE_NP);
@@ -53,28 +79,42 @@ CSObject::~CSObject()
 
 void CSObject::enter()
 {
+	/*
     if (pthread_mutex_lock(&_cs)) 
     {
 	cerr << "CSObject::enter() failed" << endl;
 	assert(0);
     };
+	*/
+
+	while (1) {
+		int res = pthread_mutex_trylock(&_cs);
+		if (res == EBUSY) {
+			continue; // try again
+		} else if (res) {
+			cerr << "CSObject::enter() failed" << endl;
+			assert(0);
+		} else {
+			return;
+		}
+	}
+	
 }
 
 void CSObject::leave()
 {
     int error = 0;
-    if ((error=pthread_mutex_unlock(&_cs)))
-    {
-	cerr << "WHHHAAAT????  CSObject::leave() failed" << endl;
-	if (error == EINVAL) {
-	    cerr << "invalid mutex" << endl;
+    if (error=pthread_mutex_unlock(&_cs)) {
+		cerr << "WHHHAAAT????  CSObject::leave() failed" << endl;
+		if (error == EINVAL) {
+			cerr << "invalid mutex" << endl;
+		}
+		if (error == EPERM) {
+			cerr << "not owner" << endl;
+		}
+		cerr << "error: " << error << flush;
+		assert(0);
 	}
-	if (error == EPERM) {
-	    cerr << "not owner" << endl;
-	}
-	cerr << "error: " << error << flush;
-	assert(0);
-    };
 }
 #endif
 
