@@ -50,6 +50,21 @@ The code is compiled with: `-DUSENR -DREAL_IS_DOUBLE -D_REENTRANT` plus warning 
 
 Note: Exceptions are enabled (removed `-fno-exceptions` and `-DNO_EXCEPTIONS`) to support modern template code.
 
+### Building on Linux (Ubuntu 24.04, gcc 13; skywalker3, October 2026)
+
+GLUT is required even for `-nogui`. Without root, build freeglut into a local prefix and point CMake at it:
+
+```bash
+mkdir -p ~/src/deps && cd ~/src/deps
+curl -sL -o freeglut-3.4.0.tar.gz https://github.com/freeglut/freeglut/releases/download/v3.4.0/freeglut-3.4.0.tar.gz
+tar xzf freeglut-3.4.0.tar.gz && cd freeglut-3.4.0 && mkdir build && cd build
+cmake .. -DCMAKE_INSTALL_PREFIX=$HOME/src/local -DFREEGLUT_BUILD_DEMOS=OFF && make -j16 && make install
+cd ~/src/afront && mkdir -p build && cd build
+cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=$HOME/src/local && make -j32
+```
+
+With `freeglut3-dev` installed system-wide the prefix is not needed. The libstdc++ port needed explicit `<cstring>`, `<cmath>`, `<climits>`, `<algorithm>` includes that libc++ had leaked, and `lib/sm/filewrapper.h` must include `<wchar.h>` before its `fclose(myfile*)` overload (glibc's `__attribute__((malloc(fclose, 1)))` is otherwise ambiguous). Output differs from macOS in the last few vertices (bunny: 17,739 vs 17,726), as expected from floating-point differences across compilers.
+
 ## Compilation Fixes Applied
 
 This 20-year-old codebase (circa 2005) required extensive patches for modern macOS (Darwin 25.0.0, Apple Silicon ARM64, Clang 17.0.0):
