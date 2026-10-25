@@ -722,6 +722,30 @@ int& mc_vindex(const Volume &v, HASH_MAP64 &gindices,
 
 
 
+// 2026: read-only lookup for the triangle pass. SGI hash_map::operator[] (find_or_insert) calls
+// resize(size+1) *before* looking for the key, so with several threads the first operator[] after
+// the vertex pass can rehash the shared table in every thread at once (double free / corruption,
+// whenever the vertex count crosses a bucket-count threshold); find() never modifies the table.
+int mc_vfind(const Volume &v, HASH_MAP64 &gindices,
+			 HASH_MAP32 &bindices, const int block_min[3], const int block_max[3], const int bsize[3],
+			 int x, int y, int z, int c) {
+
+	bool onbound = (x<=block_min[0] || x>=block_max[0]-1 ||
+					y<=block_min[1] || y>=block_max[1]-1 ||
+					z<=block_min[2] || z>=block_max[2]-1);
+
+	if (onbound) {
+		HASH_MAP64::const_iterator i = gindices.find(mc_xyz2gindex(v,x,y,z)*3 + c);
+		if (i == gindices.end()) { cerr<<"marching cubes: missing global vertex"<<endl; return 0; }
+		return i->second;
+	} else {
+		HASH_MAP32::const_iterator i = bindices.find(mc_xyz2bindex(bsize, x-block_min[0], y-block_min[1], z-block_min[2])*3 + c);
+		if (i == bindices.end()) { cerr<<"marching cubes: missing block vertex"<<endl; return 0; }
+		return i->second;
+	}
+}
+
+
 void MarchingCubesParallelVerts(int nt, int id, CSObject &cs, 
 								const Volume &v, TriangulatorController &tc, 
 								real_type isovalue, bool rootfinding, int mc_block, 
@@ -745,6 +769,9 @@ void MarchingCubesParallelVerts(int nt, int id, CSObject &cs,
 	}
 
 
+	real_type bmin, bmax;
+	v.GetBlockMinMax(bmin, bmax);
+
     int min_indices[3];
     int max_indices[3];
 
@@ -765,10 +792,6 @@ void MarchingCubesParallelVerts(int nt, int id, CSObject &cs,
 
 
 
-	// 2026: read the block's min/max after SetActiveBlock(mc_block), as the Tris pass does; before,
-	// it was the previously active block's range, so cells were skipped here that Tris then needed
-	real_type bmin, bmax;
-	v.GetBlockMinMax(bmin, bmax);
 	bool block_spans = (bmin<=isovalue && bmax>=isovalue);
 
 	int bsize[3] = { block_max[0]-block_min[0],
@@ -1085,18 +1108,18 @@ void MarchingCubesParallelTris(int nt, int id, CSObject &cs,
 
 			for (int t=0; t<(n_tris*3); t++) {
 				switch (tris[t]) {
-				case 0:	tris[t] = mc_vindex(v,gindices,bindices,block_min,block_max,bsize, tx  ,ty  ,tz  ,0); break;
-				case 1:	tris[t] = mc_vindex(v,gindices,bindices,block_min,block_max,bsize, tx+1,ty  ,tz  ,1); break;
-				case 2:	tris[t] = mc_vindex(v,gindices,bindices,block_min,block_max,bsize, tx  ,ty+1,tz  ,0); break;
-				case 3:	tris[t] = mc_vindex(v,gindices,bindices,block_min,block_max,bsize, tx  ,ty  ,tz  ,1); break;
-				case 4:	tris[t] = mc_vindex(v,gindices,bindices,block_min,block_max,bsize, tx  ,ty  ,tz  ,2); break;
-				case 5:	tris[t] = mc_vindex(v,gindices,bindices,block_min,block_max,bsize, tx+1,ty  ,tz  ,2); break;
-				case 6:	tris[t] = mc_vindex(v,gindices,bindices,block_min,block_max,bsize, tx+1,ty+1,tz  ,2); break;
-				case 7:	tris[t] = mc_vindex(v,gindices,bindices,block_min,block_max,bsize, tx  ,ty+1,tz  ,2); break;
-				case 8:	tris[t] = mc_vindex(v,gindices,bindices,block_min,block_max,bsize, tx  ,ty  ,tz+1,0); break;
-				case 9:	tris[t] = mc_vindex(v,gindices,bindices,block_min,block_max,bsize, tx+1,ty  ,tz+1,1); break;
-				case 10:tris[t] = mc_vindex(v,gindices,bindices,block_min,block_max,bsize, tx  ,ty+1,tz+1,0); break;
-				case 11:tris[t] = mc_vindex(v,gindices,bindices,block_min,block_max,bsize, tx  ,ty  ,tz+1,1); break;
+				case 0:	tris[t] = mc_vfind(v,gindices,bindices,block_min,block_max,bsize, tx  ,ty  ,tz  ,0); break;
+				case 1:	tris[t] = mc_vfind(v,gindices,bindices,block_min,block_max,bsize, tx+1,ty  ,tz  ,1); break;
+				case 2:	tris[t] = mc_vfind(v,gindices,bindices,block_min,block_max,bsize, tx  ,ty+1,tz  ,0); break;
+				case 3:	tris[t] = mc_vfind(v,gindices,bindices,block_min,block_max,bsize, tx  ,ty  ,tz  ,1); break;
+				case 4:	tris[t] = mc_vfind(v,gindices,bindices,block_min,block_max,bsize, tx  ,ty  ,tz  ,2); break;
+				case 5:	tris[t] = mc_vfind(v,gindices,bindices,block_min,block_max,bsize, tx+1,ty  ,tz  ,2); break;
+				case 6:	tris[t] = mc_vfind(v,gindices,bindices,block_min,block_max,bsize, tx+1,ty+1,tz  ,2); break;
+				case 7:	tris[t] = mc_vfind(v,gindices,bindices,block_min,block_max,bsize, tx  ,ty+1,tz  ,2); break;
+				case 8:	tris[t] = mc_vfind(v,gindices,bindices,block_min,block_max,bsize, tx  ,ty  ,tz+1,0); break;
+				case 9:	tris[t] = mc_vfind(v,gindices,bindices,block_min,block_max,bsize, tx+1,ty  ,tz+1,1); break;
+				case 10:tris[t] = mc_vfind(v,gindices,bindices,block_min,block_max,bsize, tx  ,ty+1,tz+1,0); break;
+				case 11:tris[t] = mc_vfind(v,gindices,bindices,block_min,block_max,bsize, tx  ,ty  ,tz+1,1); break;
 				}
 			}
 

@@ -3294,7 +3294,23 @@ static void *worker_thread_func(void *) {
 }
 
 
+#include <execinfo.h>
+#include <signal.h>
+#include <unistd.h>
+// 2026: print a backtrace on abort/segfault (addr2line -f -e afront <offsets> resolves it)
+static void crash_backtrace(int sig) {
+	void *frames[64];
+	int n = backtrace(frames, 64);
+	fprintf(stderr, "\nafront crashed (signal %d), backtrace of the faulting thread:\n", sig);
+	backtrace_symbols_fd(frames, n, 2);
+	_exit(128 + sig);
+}
+
 int main(int argc, char* argv[]) {
+	{ void *warm[4]; backtrace(warm, 4); }   // load libgcc now: backtrace() may malloc, which deadlocks inside abort()
+	signal(SIGABRT, crash_backtrace);
+	signal(SIGSEGV, crash_backtrace);
+
 
 
 #ifdef WIN32
