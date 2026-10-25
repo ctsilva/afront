@@ -25,6 +25,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
 
 
 
+#include <pthread.h>
 #include "common.h"
 #include "parallel.h"
 #include "guidance.h"
@@ -50,6 +51,12 @@ bool reuse_seeds = false;
 bool no_isotopic_boundary = false;
 // 2026: E2, 2007-style heuristic guidance field (see SampleCell)
 bool gf_heuristic = false;
+// 2026: E1 instrumentation of the interval bound in SampleCell
+bool gf_no_third = false;          // ignore the third-partial sign tightening of the Hessian bounds
+int gf_k = 1;                      // doublings in ||A^(2^k)||^(1/2^k); 1 is the code default (paper's k=2)
+char *gf_stats_name = NULL;        // if set, append "x y z depth kmax_bound gradmag_min fmin fmax" per SampleCell call
+static FILE *gf_stats_file = NULL;
+static pthread_mutex_t gf_stats_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 bool endswith(const char *s, const char *end);
 
@@ -2219,7 +2226,7 @@ void IsoSurfaceGuidanceField::SampleCell(int id, int cell[3],
 		for (int j=i; j<3; j++) {
 			for (int k=j; k<3; k++) {
 
-				if (_third_sign[i][j][k] == 0) {
+				if (_third_sign[i][j][k] == 0 && !gf_no_third) {
 
 					int partial[3] = {0,0,0};
 					partial[i]++;
@@ -2295,7 +2302,7 @@ void IsoSurfaceGuidanceField::SampleCell(int id, int cell[3],
 
 	// do ||A^k||^(1/k)
 	// with k=1 gives some benefit - going too far will overflow to inf's
-	int k = 1;
+	int k = gf_k;
 	gtb::tmat3<Interval> h_k = hessian;
 	for (int p=0; p<k; p++) {
 		gtb::tmat3<Interval> h_k1 = h_k;
@@ -2339,6 +2346,13 @@ void IsoSurfaceGuidanceField::SampleCell(int id, int cell[3],
 
 	// subdivide if needed
 	samples_needed = (gradmag.min<=0) ? 1000000 :  std::max(1,((int)(diag/ideal_bound / 2)));
+	if (gf_stats_name) {
+		pthread_mutex_lock(&gf_stats_mutex);
+		if (!gf_stats_file) gf_stats_file = fopen(gf_stats_name, "w");
+		if (gf_stats_file)
+			fprintf(gf_stats_file, "%d %d %d %d %g %g %d\n", cell[0], cell[1], cell[2], depth, (double)kmax_bound, (double)gradmag.min, samples_needed > curvature_sub);
+		pthread_mutex_unlock(&gf_stats_mutex);
+	}
 	}
 	if (samples_needed > curvature_sub) {
 		real_type center[3] = { (xspan_s[0].min+xspan_s[0].max)/2,

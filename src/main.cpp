@@ -146,6 +146,9 @@ thlib::CSObject *critical_section;
 bool noedgeflip = false;
 extern bool no_isotopic_boundary;
 extern bool gf_heuristic;
+extern bool gf_no_third;
+extern int gf_k;
+extern char *gf_stats_name;
 bool endswith(const char *s, const char *end) {
 	int slen = strlen(s);
 	int endlen = strlen(end);
@@ -3347,6 +3350,9 @@ int main(int argc, char* argv[]) {
 	CL_ADD_VAR(cl,small_crease,		  "edge_count : creases with less than <edge_count> edges will be discarded (default 20)");
 	CL_ADD_VAR(cl,outname,			  ": the file to output the mesh to");
 	CL_ADD_VAR(cl,meshfrontfile,      ": the file name to read the initial front for remeshing from");
+	CL_ADD_VAR(cl,gf_no_third, ": ablation, no third-partial sign tightening in the interval bounds of the guidance field");
+	CL_ADD_VAR(cl,gf_k, "k: guidance field norm ||A^(2^k)||^(1/2^k) of the interval Hessian (default 1; 0 = plain norm)");
+	CL_ADD_VAR(cl,gf_stats_name, "file: write per-cell interval curvature bounds (x y z depth kmax_bound gradmag_min subdivided)");
 	CL_ADD_VAR(cl,gf_heuristic, ": 2007-style guidance field: curvature_sub^3 curvature samples per cell crossing the surface, no interval bounds");
 	CL_ADD_VAR(cl,no_isotopic_boundary, ": ablation, do not subdivide block-face boundary curves with certified recursion");
 	CL_ADD_VAR(cl,noedgeflip,		  ": disable streaming edge flipper on the output stream");
