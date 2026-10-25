@@ -744,9 +744,6 @@ void MarchingCubesParallelVerts(int nt, int id, CSObject &cs,
 		}
 	}
 
-	real_type bmin, bmax;
-	v.GetBlockMinMax(bmin, bmax);
-
 
     int min_indices[3];
     int max_indices[3];
@@ -768,6 +765,10 @@ void MarchingCubesParallelVerts(int nt, int id, CSObject &cs,
 
 
 
+	// 2026: read the block's min/max after SetActiveBlock(mc_block), as the Tris pass does; before,
+	// it was the previously active block's range, so cells were skipped here that Tris then needed
+	real_type bmin, bmax;
+	v.GetBlockMinMax(bmin, bmax);
 	bool block_spans = (bmin<=isovalue && bmax>=isovalue);
 
 	int bsize[3] = { block_max[0]-block_min[0],
@@ -1031,14 +1032,14 @@ void MarchingCubesParallelTris(int nt, int id, CSObject &cs,
 		{
 
 			int index = 0;
-			if (tcellvals[0][0][0]> isovalue)	index |= 1<<0;
-			if (tcellvals[1][0][0]> isovalue)	index |= 1<<1;
-			if (tcellvals[1][1][0]> isovalue)	index |= 1<<2;
-			if (tcellvals[0][1][0]> isovalue)	index |= 1<<3;
-			if (tcellvals[0][0][1]> isovalue)	index |= 1<<4;
-			if (tcellvals[1][0][1]> isovalue)	index |= 1<<5;
-			if (tcellvals[1][1][1]> isovalue)	index |= 1<<6;
-			if (tcellvals[0][1][1]> isovalue)	index |= 1<<7;
+			if (tcellvals[0][0][0]>= isovalue)	index |= 1<<0;
+			if (tcellvals[1][0][0]>= isovalue)	index |= 1<<1;
+			if (tcellvals[1][1][0]>= isovalue)	index |= 1<<2;
+			if (tcellvals[0][1][0]>= isovalue)	index |= 1<<3;
+			if (tcellvals[0][0][1]>= isovalue)	index |= 1<<4;
+			if (tcellvals[1][0][1]>= isovalue)	index |= 1<<5;
+			if (tcellvals[1][1][1]>= isovalue)	index |= 1<<6;
+			if (tcellvals[0][1][1]>= isovalue)	index |= 1<<7;
 
 
 			// first check the extra cases with no inversion
@@ -1333,14 +1334,14 @@ void MarchingCubesStreaming(const Volume &v, TriangulatorController &tc,
 		{
 
 			int index = 0;
-			if (tcellvals[0][0][0]> isovalue)	index |= 1<<0;
-			if (tcellvals[1][0][0]> isovalue)	index |= 1<<1;
-			if (tcellvals[1][1][0]> isovalue)	index |= 1<<2;
-			if (tcellvals[0][1][0]> isovalue)	index |= 1<<3;
-			if (tcellvals[0][0][1]> isovalue)	index |= 1<<4;
-			if (tcellvals[1][0][1]> isovalue)	index |= 1<<5;
-			if (tcellvals[1][1][1]> isovalue)	index |= 1<<6;
-			if (tcellvals[0][1][1]> isovalue)	index |= 1<<7;
+			if (tcellvals[0][0][0]>= isovalue)	index |= 1<<0;
+			if (tcellvals[1][0][0]>= isovalue)	index |= 1<<1;
+			if (tcellvals[1][1][0]>= isovalue)	index |= 1<<2;
+			if (tcellvals[0][1][0]>= isovalue)	index |= 1<<3;
+			if (tcellvals[0][0][1]>= isovalue)	index |= 1<<4;
+			if (tcellvals[1][0][1]>= isovalue)	index |= 1<<5;
+			if (tcellvals[1][1][1]>= isovalue)	index |= 1<<6;
+			if (tcellvals[0][1][1]>= isovalue)	index |= 1<<7;
 
 
 			// first check the extra cases with no inversion
@@ -1707,14 +1708,14 @@ void MarchingCubesStats(const Volume &v, TriangulatorController *tc, real_type i
 
 
 				int index = 0;
-				if (vcellvals[0][0][0]> isovalue)	index |= 1<<0;
-				if (vcellvals[1][0][0]> isovalue)	index |= 1<<1;
-				if (vcellvals[1][1][0]> isovalue)	index |= 1<<2;
-				if (vcellvals[0][1][0]> isovalue)	index |= 1<<3;
-				if (vcellvals[0][0][1]> isovalue)	index |= 1<<4;
-				if (vcellvals[1][0][1]> isovalue)	index |= 1<<5;
-				if (vcellvals[1][1][1]> isovalue)	index |= 1<<6;
-				if (vcellvals[0][1][1]> isovalue)	index |= 1<<7;
+				if (vcellvals[0][0][0]>= isovalue)	index |= 1<<0;
+				if (vcellvals[1][0][0]>= isovalue)	index |= 1<<1;
+				if (vcellvals[1][1][0]>= isovalue)	index |= 1<<2;
+				if (vcellvals[0][1][0]>= isovalue)	index |= 1<<3;
+				if (vcellvals[0][0][1]>= isovalue)	index |= 1<<4;
+				if (vcellvals[1][0][1]>= isovalue)	index |= 1<<5;
+				if (vcellvals[1][1][1]>= isovalue)	index |= 1<<6;
+				if (vcellvals[0][1][1]>= isovalue)	index |= 1<<7;
 
 
 				// first check the extra cases with no inversion

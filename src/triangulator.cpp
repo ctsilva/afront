@@ -1819,6 +1819,19 @@ void Triangulator::InsertBoundary(vector<Point3> &pts, vector<Vector3> &norms, b
 			AddNeighborsToRings(*n1, *Front::NextElement(n1));
 
 			// remove cruft
+			// 2026: a queued projection may hold n2 or i1 as a base (after Merge/Split the element
+			// that requested it is not necessarily adjacent any more), so drain the queue and let
+			// running projections finish before freeing them (ASan: heap-use-after-free in
+			// DoProjection, out-of-core, 2+ threads)
+			for (;;) {
+				work_cs.enter();
+				bool empty = (work_queue.size() == 0);
+				work_cs.leave();
+				if (empty) break;
+				thlib::Thread::yield();
+			}
+			PauseProjections();
+			ContinueProjections();
 			Front::RemoveElement(n2); // new edge going wrong way
 			Front::RemoveElement(i1); // old connector
 
