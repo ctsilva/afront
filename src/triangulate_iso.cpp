@@ -100,7 +100,7 @@ real_type RegularVolume<T>::GetValue(int x, int y, int z) const {
 	ZCurve::xyz2i(x,y,z,i);
 	return (real_type)data[i] * iso_scale;
 #else
-    return (real_type)data[(z*dim[0]*dim[1] + y*dim[0] + x)] * iso_scale;
+    return (real_type)data[((size_t)z*dim[0]*dim[1] + y*dim[0] + x)] * iso_scale;
 #endif
 }
 
@@ -180,7 +180,7 @@ void RegularVolume<T>::WriteValue(int x, int y, int z, FILE *f) const {
 	ZCurve::xyz2i(x,y,z,i);
     fwrite(&data[i], 1, sizeof(T), f);
 #else
-    fwrite(&data[(z*dim[0]*dim[1] + y*dim[0] + x)], 1, sizeof(T), f);
+    fwrite(&data[((size_t)z*dim[0]*dim[1] + y*dim[0] + x)], 1, sizeof(T), f);
 #endif
 }
 
@@ -193,7 +193,7 @@ void RegularVolume<T>::WriteValue(int x, int y, int z, gzFile f) const {
 	ZCurve::xyz2i(x,y,z,i);
     gzwrite(f, &data[i], sizeof(T));
 #else
-    gzwrite(f, &data[(z*dim[0]*dim[1] + y*dim[0] + x)], sizeof(T));
+    gzwrite(f, &data[((size_t)z*dim[0]*dim[1] + y*dim[0] + x)], sizeof(T));
 #endif
 }
 #endif
@@ -358,7 +358,7 @@ bool RegularVolume<T>::ReadSource(const char *fname, bool bigendian) {
 
 		data = new T[zdim*zdim*zdim];
 #else
-		data = new T[dim[0]*dim[1]*dim[2]];
+		data = new T[(size_t)dim[0]*dim[1]*dim[2]];
 #endif
 
 		bool first=true;
@@ -381,7 +381,7 @@ bool RegularVolume<T>::ReadSource(const char *fname, bool bigendian) {
 					ZCurve::xyz2i(x,y,z,i);
 					data[i] = s;
 #else
-					data[(z*dim[0]*dim[1] + y*dim[0] + x)] = s;
+					data[((size_t)z*dim[0]*dim[1] + y*dim[0] + x)] = s;
 #endif
 					if (first) {
 						first = false;
@@ -438,7 +438,7 @@ bool RegularVolume<T>::ReadSource(const char *fname, bool bigendian) {
 
 		data = new T[zdim*zdim*zdim];
 #else
-		data = new T[dim[0]*dim[1]*dim[2]];
+		data = new T[(size_t)dim[0]*dim[1]*dim[2]];
 #endif
 
 
@@ -465,7 +465,7 @@ bool RegularVolume<T>::ReadSource(const char *fname, bool bigendian) {
 					ZCurve::xyz2i(x,y,z,i);
 					data[i] = s;
 #else
-					data[(z*dim[0]*dim[1] + y*dim[0] + x)] = s;
+					data[((size_t)z*dim[0]*dim[1] + y*dim[0] + x)] = s;
 #endif
 
 					if (first) {
