@@ -71,6 +71,8 @@ class ProjectionResult {
     Vector3 normal;
 	real_type step;
     volatile int result;   // success/boundary/fail/notfinished...
+    volatile int pending;  // 2026: queued or running projection work items that point at this element
+    ProjectionResult() : pending(0) { }
 };
 
 class FrontElement {

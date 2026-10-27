@@ -330,6 +330,7 @@ void Triangulator::RequestProjection(feli e) {
 		DoProjection(pw);
 
 	} else {
+		__sync_fetch_and_add(&e->proj_res.pending, 1);
 		// put it in the work queue
 		work_cs.enter();
 		real_type priority = PrioritizeEdgeGrow(*e, *n);
@@ -338,8 +339,15 @@ void Triangulator::RequestProjection(feli e) {
 	}
 }
 
+// 2026: counts of the situations the old WaitForProjection let through (see PLAN.md, full-RM crash)
+int proj_dup_waits = 0;    // result already set by an earlier work item while a later one for the same element was still queued/running
+int proj_prev_waits = 0;   // the previous edge still had a work item that reads the element being removed
+
 void Triangulator::WaitForProjection(feli e) {
-    while (e->proj_res.result == PROJECT_INCOMPLETE) {
+    // wait for every queued or running work item for e, not just the first one to set result
+    if (e->proj_res.result != PROJECT_INCOMPLETE && e->proj_res.pending > 0)
+		__sync_fetch_and_add(&proj_dup_waits, 1);
+    while (e->proj_res.result == PROJECT_INCOMPLETE || e->proj_res.pending > 0) {
 		thlib::Thread::yield();
     }
 }
@@ -379,6 +387,7 @@ void* Triangulator::ProjectorThreadMain(void* arg) {
 
 			if (havework) {
 				tri->DoProjection(pw);
+				__sync_fetch_and_sub(&pw.pr->pending, 1);
 			} else {
 				thlib::Thread::yield();
 			}
@@ -1599,6 +1608,13 @@ void Triangulator::RemoveFrontElement(feli e) {
     VertexRefDecrement(*e);
 
     WaitForProjection(e);
+    {   // the previous edge's work item reads e as its second endpoint
+		feli pe = Front::PrevElement(e);
+		if (pe != e && pe->proj_res.pending > 0) {
+			__sync_fetch_and_add(&proj_prev_waits, 1);
+			while (pe->proj_res.pending > 0) thlib::Thread::yield();
+		}
+    }
     KDRemove(e);
     heap.remove(e->heap_position);
     Front::RemoveElement(e);
@@ -1887,8 +1903,9 @@ void Triangulator::UpdateWorkingBlock(bool first) {
 		double now = get_time_seconds();
 		double tri = prev_end > 0 ? sw_start - prev_end : 0;
 		tot_switch += now - sw_start; tot_tri += tri; nswitch++;
-		fprintf(stderr, "\n[TIMING] block switch %d: switch=%.2f s, previous block triangulated in %.2f s (cumulative switch=%.2f tri=%.2f)\n",
-				nswitch, now - sw_start, tri, tot_switch, tot_tri);
+		extern int proj_dup_waits, proj_prev_waits;
+		fprintf(stderr, "\n[TIMING] block switch %d: switch=%.2f s, previous block triangulated in %.2f s (cumulative switch=%.2f tri=%.2f) [PROJRACE] dup_waits=%d prev_waits=%d\n",
+				nswitch, now - sw_start, tri, tot_switch, tot_tri, proj_dup_waits, proj_prev_waits);
 		prev_end = now;
     }
 
@@ -2475,6 +2492,14 @@ Triangulator::~Triangulator() {
 Triangulator::Box3 Triangulator::bounding_box(const feli &i) const {
     Box3 box(i->position, i->position);
     box.update(Front::NextElement(i)->position);
+    // 2026: a non-finite position makes std::sort in BoxKDTree::Split undefined; report it instead of crashing later
+    const Point3 &p0 = i->position, &p1 = Front::NextElement(i)->position;
+    double chk = p0[0]+p0[1]+p0[2]+p1[0]+p1[1]+p1[2];
+    if (!(chk - chk == 0.0)) {   // false for NaN and inf
+		fprintf(stderr, "\n[BADPOS] front element %p: (%g %g %g) next (%g %g %g) flags=%d heap_position=%d vertindex=%d pending=%d result=%d\n",
+				(void*)&*i, p0[0],p0[1],p0[2], p1[0],p1[1],p1[2], i->flags, i->heap_position, i->vertindex, i->proj_res.pending, i->proj_res.result);
+		abort();
+    }
     return box;
 }
 
