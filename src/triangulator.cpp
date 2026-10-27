@@ -121,7 +121,10 @@ void Triangulator::AddNeighborsToRings(FrontElement &v1, FrontElement &v2) {
 
 
 
+extern real_type kd_max_step_seen;   // 2026: largest step of any vertex so far (margin of the block query)
+
 void Triangulator::CreateVertex(const Point3 &p, const Vector3 &n, FrontElement &fe, bool boundary, real_type step) {
+    if (step > kd_max_step_seen) kd_max_step_seen = step;
 
     fe = FrontElement(p, n, numVertsAdded, step);
     controller.AddVertex(numVertsAdded, p, flipOutput?-n:n, boundary);
@@ -1896,6 +1899,8 @@ void Triangulator::InsertBoundary(vector<Point3> &pts, vector<Vector3> &norms, b
 double sw_t_loop = 0, sw_t_bnd = 0, sw_t_area = 0, sw_t_rebuild_l = 0, sw_t_seeds = 0, sw_t_rebuild_g = 0;
 long long sw_n_scanned = 0;
 bool kdg_always_rebuild = false;
+bool block_scan_always = false, block_query_verify = false;
+real_type kd_max_step_seen = 0;
 
 void Triangulator::UpdateWorkingBlock(bool first) {
 
@@ -1933,6 +1938,9 @@ void Triangulator::UpdateWorkingBlock(bool first) {
 	double ph = get_time_seconds();
 	vector<Front*> nfronts(fronts.size()); nfronts.resize(0);
 
+    extern bool block_scan_always, block_query_verify;
+    if (block_scan_always || !haveWorkingBlock) {
+		// the 2009 behavior: scan every element of every front (O(open front elements) per switch)
     for (unsigned f=0; f<fronts.size(); f++) {
 		if (fronts[f]->empty()) continue;
 
@@ -1954,6 +1962,51 @@ void Triangulator::UpdateWorkingBlock(bool first) {
 		} while (fe != fronts[f]->FirstElement());
 
 		nfronts.push_back(fronts[f]);
+    }
+    } else {
+		// 2026: only elements whose edge comes near the new block can have its projected point inside it, so ask
+		// the global kd-tree (O(log N + k)) instead of scanning everything. Margin: the projected point lies within
+		// a few steps of the edge. -block_query_verify t also runs the full scan and reports any miss.
+		nfronts = fronts;   // fronts that close are removed by RemoveFrontElement
+		real_type margin = 4 * kd_max_step_seen;
+		Vector3 mv(margin, margin, margin);
+		Box3 qb(workingBlock.min_point() - mv, workingBlock.max_point() + mv);
+		vector<feli> cand;
+		kdtree_g.GetIntersectedBoxes(*this, qb, cand);
+		sw_n_scanned += cand.size();
+		for (unsigned c=0; c<cand.size(); c++) {
+			feli fe = cand[c];
+			feli ne = Front::NextElement(fe);
+			if (!(fe->priority.first & PRIORITY_FAILSAFE_ANY) &&
+				(fe->priority.first & PRIORITY_OWB) &&
+				InWorkingBlock(fe, ne)) {
+				fe->priority.first &= ~PRIORITY_OWB;
+				KDUpdate(fe);
+				heap.update_position(fe->heap_position);
+			}
+		}
+		if (block_query_verify) {
+			static int nmiss = 0;
+			for (unsigned f=0; f<fronts.size(); f++) {
+				if (fronts[f]->empty()) continue;
+				feli fe = fronts[f]->FirstElement();
+				do {
+					feli ne = Front::NextElement(fe);
+					if (!(fe->priority.first & PRIORITY_FAILSAFE_ANY) &&
+						(fe->priority.first & PRIORITY_OWB) &&
+						InWorkingBlock(fe, ne)) {
+						nmiss++;
+						if (nmiss <= 20)
+							fprintf(stderr, "\n[BLOCKQUERY] MISS %d: element at (%g %g %g) next (%g %g %g), margin %g, max step seen %g\n", nmiss,
+									fe->position[0],fe->position[1],fe->position[2], ne->position[0],ne->position[1],ne->position[2], (double)margin, (double)kd_max_step_seen);
+						fe->priority.first &= ~PRIORITY_OWB;
+						KDUpdate(fe);
+						heap.update_position(fe->heap_position);
+					}
+					fe = ne;
+				} while (fe != fronts[f]->FirstElement());
+			}
+		}
     }
 	cerr<<"removing "<<(fronts.size()-nfronts.size())<<" fronts that have closed"<<endl;
 	fronts = nfronts;
@@ -2053,6 +2106,15 @@ void Triangulator::UpdateWorkingBlock(bool first) {
     {
 		extern bool kdg_always_rebuild;   // -kdg_always_rebuild t: the 2009 behavior (rebuild at every switch)
 		long long ng = (long long)heap.contents(1).size();
+		{   // balance of the global tree before the rebuild decision (every 20 switches)
+			static int nst = 0;
+			if (++nst % 20 == 0 && ng) {
+				size_t nodes = 0, objs = 0, sumd = 0; int maxd = 0;
+				kdtree_g.stats(0, nodes, objs, sumd, maxd);
+				fprintf(stderr, "\n[KDSTATS] switch %d: %zu objects in %zu nodes, max depth %d, mean depth %.1f, balanced would be %.1f; edits since rebuild %lld\n",
+						nst, objs, nodes, maxd, objs ? (double)sumd/objs : 0.0, std::log2(std::max<double>(1.0, objs/(double)BOXKDTREE_MAXLEAFSIZE)), kdg_edits);
+			}
+		}
 		if (ng && (kdg_always_rebuild || kdg_size_at_rebuild == 0 ||
 				   kdg_edits > std::max<long long>(1000, kdg_size_at_rebuild / 4))) {
 			static int nsync = 0, nbad = 0;

@@ -1757,6 +1757,14 @@ public:
 		if (children[1]) delete children[1];
 	}
 
+	// 2026: balance statistics: leaves/nodes, deepest object, sum of object depths
+	void stats(int depth, size_t &nodes, size_t &objs, size_t &sumdepth, int &maxdepth) const {
+		nodes++; objs += objects.size(); sumdepth += (size_t)depth * objects.size();
+		if (!objects.empty() && depth > maxdepth) maxdepth = depth;
+		if (children[0]) children[0]->stats(depth+1, nodes, objs, sumdepth, maxdepth);
+		if (children[1]) children[1]->stats(depth+1, nodes, objs, sumdepth, maxdepth);
+	}
+
 	// 2026: number of objects stored in this subtree
 	size_t count() const {
 		size_t n = objects.size();
