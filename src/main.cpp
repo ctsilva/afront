@@ -128,6 +128,7 @@ int prefetch_lookahead = 1;
 
 bool feature_interference_hack = false;
 extern bool reuse_guidance;
+extern bool kdg_always_rebuild;
 extern bool reuse_seeds;
 bool retro = false;
 
@@ -3404,6 +3405,7 @@ int main(int argc, char* argv[]) {
 	CL_ADD_VAR(cl,trim_guidance,	  ": trim the guindance field or use the full point set");
 	CL_ADD_VAR(cl,trim_bin_size,	  ": when to stop subdivision for guidance field trimming");
     CL_ADD_VAR(cl,gf_prefix,          ": prefix for saving the gf");
+    CL_ADD_VAR(cl,kdg_always_rebuild, ": rebuild the global kd-tree of front elements at every block switch (2009 behavior); default: only after enough edits");
     CL_ADD_VAR(cl,reuse_guidance,     ": reuse the already computed guidance field for out of core isosurface extraction");
     CL_ADD_VAR(cl,reuse_seeds,        ": reuse the already computed boundary and seed points for isosurface extraction");
 	CL_ADD_VAR(cl,retro,              ": retroactively add points to the guidance field - helps when you dont same the gf densely enough");

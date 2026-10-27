@@ -1096,11 +1096,16 @@ real_type cosangle(const Triangulator::feli &f0, const Triangulator::feli &f1, c
 
 
 
+// 2026: edits to the global kd-tree since it was last rebuilt; it is rebuilt (to rebalance it) only after
+// enough of them, so a block switch no longer costs O(open front elements) (see PLAN.md, full-RM run)
+static long long kdg_edits = 0, kdg_size_at_rebuild = 0;
+
 void Triangulator::KDInsert(feli e) {
 	if (e->heap_position >= 0) {
 		kdtree_l.Insert(*this, e);
 	} else {
 		kdtree_g.Insert(*this, e);
+		kdg_edits++;
 	}
 }
 
@@ -1110,6 +1115,7 @@ void Triangulator::KDRemove(feli e) {
 		kdtree_l.Remove(*this, e);
 	} else {
 		kdtree_g.Remove(*this, e);
+		kdg_edits++;
 	}
 }
 
@@ -1121,10 +1127,12 @@ void Triangulator::KDUpdate(feli e) {
 		// new level is 0 (local), but old level is 1 (global)
 		kdtree_g.Remove(*this, e);
 		kdtree_l.Insert(*this, e);
+		kdg_edits++;
 	} else if (level==1 && e->heap_position>=0) {
 		// new level is 1 (global), but old level is 0 (local)
 		kdtree_l.Remove(*this, e);
 		kdtree_g.Insert(*this, e);
+		kdg_edits++;
 	}
 }
 
@@ -1683,9 +1691,11 @@ void Triangulator::UpdateWorkingArea(feli e) {
     redrawAndWait(' ');
 
 
+    double rb = get_time_seconds();
     if (heap.contents(0).size()) {
 		kdtree_l.ReBuild(heap.contents(0), *this);
     }
+    extern double sw_t_rebuild_l; sw_t_rebuild_l += get_time_seconds() - rb;
 }
 
 bool Triangulator::InWorkingArea(feli e1, feli e2) {
@@ -1882,6 +1892,11 @@ void Triangulator::InsertBoundary(vector<Point3> &pts, vector<Vector3> &norms, b
 	// VerifyFronts();
 }
 
+// 2026: where the block-switch time goes (cumulative seconds) and how many elements it touches
+double sw_t_loop = 0, sw_t_bnd = 0, sw_t_area = 0, sw_t_rebuild_l = 0, sw_t_seeds = 0, sw_t_rebuild_g = 0;
+long long sw_n_scanned = 0;
+bool kdg_always_rebuild = false;
+
 void Triangulator::UpdateWorkingBlock(bool first) {
 
     vector< vector<Point3> > new_pts;
@@ -1904,6 +1919,9 @@ void Triangulator::UpdateWorkingBlock(bool first) {
 		double tri = prev_end > 0 ? sw_start - prev_end : 0;
 		tot_switch += now - sw_start; tot_tri += tri; nswitch++;
 		extern int proj_dup_waits, proj_prev_waits;
+		extern double sw_t_loop, sw_t_bnd, sw_t_area, sw_t_rebuild_l, sw_t_seeds, sw_t_rebuild_g; extern long long sw_n_scanned;
+		fprintf(stderr, "\n[SWITCHPHASES] %d loop=%.1f bnd=%.1f area=%.1f (rebuild_l=%.1f) seeds=%.1f rebuild_g=%.1f scanned=%lld heap_l=%d heap_g=%d\n",
+				nswitch, sw_t_loop, sw_t_bnd, sw_t_area, sw_t_rebuild_l, sw_t_seeds, sw_t_rebuild_g, sw_n_scanned, (int)heap.contents(0).size(), (int)heap.contents(1).size());
 		fprintf(stderr, "\n[TIMING] block switch %d: switch=%.2f s, previous block triangulated in %.2f s (cumulative switch=%.2f tri=%.2f) [PROJRACE] dup_waits=%d prev_waits=%d\n",
 				nswitch, now - sw_start, tri, tot_switch, tot_tri, proj_dup_waits, proj_prev_waits);
 		prev_end = now;
@@ -1912,6 +1930,7 @@ void Triangulator::UpdateWorkingBlock(bool first) {
 
     // move stuff into the new working area
 	// while we're going through the fronts, remove any that have vanished
+	double ph = get_time_seconds();
 	vector<Front*> nfronts(fronts.size()); nfronts.resize(0);
 
     for (unsigned f=0; f<fronts.size(); f++) {
@@ -1920,6 +1939,7 @@ void Triangulator::UpdateWorkingBlock(bool first) {
 		feli fe = fronts[f]->FirstElement();
 		do {
 			feli ne = Front::NextElement(fe);
+			sw_n_scanned++;
 
 			if (!(fe->priority.first & PRIORITY_FAILSAFE_ANY) &&
 				(fe->priority.first & PRIORITY_OWB) &&
@@ -1937,6 +1957,7 @@ void Triangulator::UpdateWorkingBlock(bool first) {
     }
 	cerr<<"removing "<<(fronts.size()-nfronts.size())<<" fronts that have closed"<<endl;
 	fronts = nfronts;
+	sw_t_loop += get_time_seconds() - ph; ph = get_time_seconds();
 
 
     // add any new boundaries we have as initial fronts
@@ -1947,9 +1968,11 @@ void Triangulator::UpdateWorkingBlock(bool first) {
     }
 
 
+	sw_t_bnd += get_time_seconds() - ph; ph = get_time_seconds();
     if (!heap.empty()) {
 		UpdateWorkingArea(heap.top());
     }
+	sw_t_area += get_time_seconds() - ph; ph = get_time_seconds();
 
     cerr<<"setting new seeds: "<<new_seeds.size()<<endl;
 
@@ -2026,9 +2049,22 @@ void Triangulator::UpdateWorkingBlock(bool first) {
 
 
 
-    if (heap.contents(1).size()) {
-		kdtree_g.ReBuild(heap.contents(1), *this);
+    sw_t_seeds += get_time_seconds() - ph; ph = get_time_seconds();
+    {
+		extern bool kdg_always_rebuild;   // -kdg_always_rebuild t: the 2009 behavior (rebuild at every switch)
+		long long ng = (long long)heap.contents(1).size();
+		if (ng && (kdg_always_rebuild || kdg_size_at_rebuild == 0 ||
+				   kdg_edits > std::max<long long>(1000, kdg_size_at_rebuild / 4))) {
+			static int nsync = 0, nbad = 0;
+			long long inTree = (long long)kdtree_g.count();   // before the rebuild: does the tree still match the heap level?
+			nsync++; if (inTree != ng) nbad++;
+			if (inTree != ng && nbad <= 20)
+				fprintf(stderr, "\n[KDSYNC] global kd-tree holds %lld objects, heap level 1 holds %lld (%d of %d checks off)\n", inTree, ng, nbad, nsync);
+			kdtree_g.ReBuild(heap.contents(1), *this);
+			kdg_edits = 0; kdg_size_at_rebuild = ng;
+		}
     }
+    sw_t_rebuild_g += get_time_seconds() - ph;
 }
 
 

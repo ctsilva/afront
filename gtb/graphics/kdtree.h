@@ -1757,6 +1757,14 @@ public:
 		if (children[1]) delete children[1];
 	}
 
+	// 2026: number of objects stored in this subtree
+	size_t count() const {
+		size_t n = objects.size();
+		if (children[0]) n += children[0]->count();
+		if (children[1]) n += children[1]->count();
+		return n;
+	}
+
 
 	BoxKDTree(const std::vector<OBJECT> &iobjects, const DISTBOXCLASS &boxclass, int axis=0) {
 
