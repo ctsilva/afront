@@ -3309,6 +3309,14 @@ static void crash_backtrace(int sig, siginfo_t *si, void *) {
 	_exit(128 + sig);
 }
 
+// 2026: used by the "connector edge" sanity checks in triangulator.cpp, which used to exit(0) silently
+void crash_backtrace_now(const char *msg) {
+	void *frames[64];
+	int n = backtrace(frames, 64);
+	fprintf(stderr, "\n[FATAL] %s -- backtrace:\n", msg);
+	backtrace_symbols_fd(frames, n, 2);
+}
+
 int main(int argc, char* argv[]) {
 	{ void *warm[4]; backtrace(warm, 4); }   // load libgcc now: backtrace() may malloc, which deadlocks inside abort()
 	{ struct sigaction sa; memset(&sa, 0, sizeof sa); sa.sa_sigaction = crash_backtrace; sa.sa_flags = SA_SIGINFO;

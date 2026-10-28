@@ -1304,7 +1304,8 @@ void Triangulator::ConnectTriangle(feli e1, feli across, bool dofailsafe)
 {
     if (e1->flags & FRONT_FLAG_CONNECTOR) {
 		cerr<<"connecting connector edge!"<<endl;
-		exit(0);
+		extern void crash_backtrace_now(const char*); crash_backtrace_now("connecting connector edge!");
+		exit(1);
     }
 
     bool failsafe = (e1->priority.first & PRIORITY_FAILSAFE_ANY);
@@ -1439,7 +1440,8 @@ void Triangulator::ConnectTriangle(feli e1, feli across, bool dofailsafe)
 
 		if ((e1->flags & FRONT_FLAG_CONNECTOR) || (across->flags & FRONT_FLAG_CONNECTOR)) {
 			cerr<<"ear cutting connector edge!"<<endl;
-			exit(0);
+			extern void crash_backtrace_now(const char*); crash_backtrace_now("ear cutting connector edge!");
+		exit(1);
 		}
 
 		int e1v = e1->vertindex;
@@ -1477,7 +1479,8 @@ void Triangulator::GrowEdge(feli e1, const Point3 &p, const Vector3 &v, real_typ
 
     if (e1->flags & FRONT_FLAG_CONNECTOR) {
 		cerr<<"growing connector edge!"<<endl;
-		exit(0);
+		extern void crash_backtrace_now(const char*); crash_backtrace_now("growing connector edge!");
+		exit(1);
     }
 
     WaitForProjection(e1);
@@ -1623,7 +1626,8 @@ void Triangulator::RemoveFrontElement(feli e) {
 
     if (e->flags & FRONT_FLAG_CONNECTOR) {
 		cerr<<"removing front connector"<<endl;
-		exit(0);
+		extern void crash_backtrace_now(const char*); crash_backtrace_now("removing front connector");
+		exit(1);
     }
 
     VertexRefDecrement(*e);
