@@ -1921,6 +1921,7 @@ void Triangulator::InsertBoundary(vector<Point3> &pts, vector<Vector3> &norms, b
 double sw_t_loop = 0, sw_t_bnd = 0, sw_t_area = 0, sw_t_rebuild_l = 0, sw_t_seeds = 0, sw_t_rebuild_g = 0;
 long long sw_n_scanned = 0;
 bool kdg_always_rebuild = false;
+bool ckpt_ready = false;   // true once Go() has entered its main loop (see MaybeCheckpoint)
 int sw_nswitch = 0;   // block switches so far (checkpoints are numbered by it)
 bool block_scan_always = false, block_query_verify = false;
 real_type kd_max_step_seen = 0;
@@ -2174,6 +2175,7 @@ void Triangulator::UpdateWorkingBlock(bool first) {
     }
     sw_t_rebuild_g += get_time_seconds() - ph;
     MaybeCheckpoint();
+    if (FILE *tf = trace_file()) fprintf(tf, "E end of UpdateWorkingBlock r=%.17g c=(%.17g %.17g %.17g)\n", (double)workingAreaRadius, (double)workingAreaCenter[0], (double)workingAreaCenter[1], (double)workingAreaCenter[2]);
 }
 
 
@@ -2271,6 +2273,7 @@ void Triangulator::Go
     cerr << "[TIMING] Starting triangulation (using " << work_threads.size() << " projector threads)..." << endl;
 	bool seen_failsafe = false;
 
+    ckpt_ready = true;   // checkpoints only from here on: the setup above is not replayed when resuming
     while (true) {
 		if (heap.empty()) {
 			// stop if we have no more working blocks
@@ -2281,6 +2284,8 @@ void Triangulator::Go
 			continue;
 		}
 		feli top = heap.top();
+		if (FILE *tf = trace_file()) fprintf(tf, "H %d %08x %.17g (%d,%d) nf=%zu\n", top->vertindex, top->priority.first, (double)top->priority.second, (int)heap.contents(0).size(), (int)heap.contents(1).size(), fronts.size());
+		if (FILE *tf = trace_file()) fprintf(tf, "W r=%.17g c=(%.17g %.17g %.17g) have=%d blk=(%.17g %.17g %.17g)-(%.17g %.17g %.17g)\n", (double)workingAreaRadius, (double)workingAreaCenter[0], (double)workingAreaCenter[1], (double)workingAreaCenter[2], (int)haveWorkingBlock, (double)workingBlock.min_point()[0], (double)workingBlock.min_point()[1], (double)workingBlock.min_point()[2], (double)workingBlock.max_point()[0], (double)workingBlock.max_point()[1], (double)workingBlock.max_point()[2]);
 		
 		if (top->priority.first & PRIORITY_OWB) {
 			UpdateWorkingBlock();

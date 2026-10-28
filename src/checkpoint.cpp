@@ -21,6 +21,7 @@
 extern char *checkpoint_dir, *resume_from;
 extern int checkpoint_every, checkpoint_keep, checkpoint_keep_every;
 extern int sw_nswitch;
+extern bool ckpt_ready;
 extern long long kdg_edits, kdg_size_at_rebuild;
 extern real_type kd_max_step_seen;
 
@@ -95,6 +96,8 @@ void Triangulator::SaveCheckpoint(const char *path) {
 	o.tag("END!");
 	fflush(fp); fsync(fileno(fp)); fclose(fp);
 	rename(tmp.c_str(), path);
+	if (FILE *tf = trace_file()) fprintf(tf, "C switch %d saved\n", sw_nswitch);
+	if (getenv("AFRONT_TRACE")) fprintf(stderr, "[CKPTSTATE] r=%.17g c=(%.17g %.17g %.17g)\n", (double)workingAreaRadius, (double)workingAreaCenter[0], (double)workingAreaCenter[1], (double)workingAreaCenter[2]);
 	fprintf(stderr, "\n[CHECKPOINT] switch %d: wrote %s (%zu front elements, %d faces, active block %d) in %.1f s\n",
 			sw_nswitch, path, elems.size(), numFacesAdded, ab, get_time_seconds() - t0);
 	ContinueProjections();
@@ -165,7 +168,7 @@ void Triangulator::LoadCheckpoint(const char *path) {
 
 // called at the end of UpdateWorkingBlock
 void Triangulator::MaybeCheckpoint() {
-	if (!checkpoint_dir || checkpoint_every <= 0 || sw_nswitch % checkpoint_every != 0)
+	if (!ckpt_ready || !checkpoint_dir || checkpoint_every <= 0 || sw_nswitch % checkpoint_every != 0)
 		return;
 	mkdir(checkpoint_dir, 0777);
 	char path[2048];
