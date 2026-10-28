@@ -282,6 +282,7 @@ class Triangulator {
 
     Box3 bounding_box(const feli &i) const;
     real_type distance(const feli &i, const Point3 &from) const;
+    void KDAudit(const char *where);   // 2026: -kd_audit N: compare the kd-trees with the heap levels
 
     void SetFlipOutput(bool f) { flipOutput=f; }
 

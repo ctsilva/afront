@@ -1912,6 +1912,28 @@ bool kdg_always_rebuild = false;
 bool block_scan_always = false, block_query_verify = false;
 real_type kd_max_step_seen = 0;
 
+int kd_audit = 0;   // -kd_audit N: every N block switches, check that the kd-trees hold exactly the front elements of the heap levels
+
+void Triangulator::KDAudit(const char *where) {
+	static int nbad = 0, nrun = 0;
+	nrun++;
+	for (int level=0; level<2; level++) {
+		std::vector<feli> inTree;
+		(level ? kdtree_g : kdtree_l).collect(inTree);
+		const std::vector<feli> &inHeap = heap.contents(level);
+		std::set<void*> th, tt;
+		for (size_t i=0; i<inHeap.size(); i++) th.insert((void*)&*inHeap[i]);
+		size_t dups = 0;
+		for (size_t i=0; i<inTree.size(); i++) if (!tt.insert((void*)&*inTree[i]).second) dups++;
+		size_t stale = 0, missing = 0;
+		for (void *x : tt) if (!th.count(x)) stale++;
+		for (void *x : th) if (!tt.count(x)) missing++;
+		if ((stale || missing || dups) && nbad++ < 30)
+			fprintf(stderr, "\n[KDAUDIT] %s level %d (%s tree): %zu in tree, %zu in heap, stale=%zu missing=%zu duplicates=%zu (audit %d)\n",
+					where, level, level ? "global" : "local", inTree.size(), inHeap.size(), stale, missing, dups, nrun);
+	}
+}
+
 void Triangulator::UpdateWorkingBlock(bool first) {
 
     vector< vector<Point3> > new_pts;
@@ -2113,6 +2135,7 @@ void Triangulator::UpdateWorkingBlock(bool first) {
 
 
     sw_t_seeds += get_time_seconds() - ph; ph = get_time_seconds();
+    if (kd_audit > 0) { static int na = 0; if (++na % kd_audit == 0) KDAudit("block switch"); }
     {
 		extern bool kdg_always_rebuild;   // -kdg_always_rebuild t: the 2009 behavior (rebuild at every switch)
 		long long ng = (long long)heap.contents(1).size();

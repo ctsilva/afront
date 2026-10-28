@@ -129,6 +129,7 @@ int prefetch_lookahead = 1;
 bool feature_interference_hack = false;
 extern bool reuse_guidance;
 extern bool kdg_always_rebuild;
+extern int kd_audit;
 extern bool block_scan_always, block_query_verify;
 extern bool reuse_seeds;
 bool retro = false;
@@ -3408,6 +3409,7 @@ int main(int argc, char* argv[]) {
     CL_ADD_VAR(cl,gf_prefix,          ": prefix for saving the gf");
     CL_ADD_VAR(cl,block_scan_always,  ": at a block switch, scan every front element for ones entering the block (2009 behavior); default: kd-tree box query");
     CL_ADD_VAR(cl,block_query_verify, ": also run the full scan after the block query and report any element the query missed");
+    CL_ADD_VAR(cl,kd_audit, ": every N block switches check that the kd-trees hold exactly the heap levels' front elements ([KDAUDIT])");
     CL_ADD_VAR(cl,kdg_always_rebuild, ": rebuild the global kd-tree of front elements at every block switch (2009 behavior); default: only after enough edits");
     CL_ADD_VAR(cl,reuse_guidance,     ": reuse the already computed guidance field for out of core isosurface extraction");
     CL_ADD_VAR(cl,reuse_seeds,        ": reuse the already computed boundary and seed points for isosurface extraction");

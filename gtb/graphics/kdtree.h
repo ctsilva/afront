@@ -1766,6 +1766,13 @@ public:
 	}
 
 	// 2026: number of objects stored in this subtree
+	// all objects in the tree (debugging / consistency checks)
+	void collect(std::vector<OBJECT> &out) const {
+		out.insert(out.end(), objects.begin(), objects.end());
+		if (children[0]) children[0]->collect(out);
+		if (children[1]) children[1]->collect(out);
+	}
+
 	size_t count() const {
 		size_t n = objects.size();
 		if (children[0]) n += children[0]->count();
