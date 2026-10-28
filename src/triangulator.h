@@ -74,6 +74,12 @@ class TriangulatorController {
     virtual bool GetNextBlock(Box3 &box, vector< vector<Point3> > &pts, vector< vector<Vector3> > &norms, vector<bool> &loops, vector< vector<Point3> > &seeds) const = 0;
 	virtual int  GetBlockForPoint(const Point3 &p) const = 0;
 
+    // 2026: checkpoint support: output stages' state and the active volume block (-1: not supported)
+    virtual void SaveOutputState(FILE *f) const { }
+    virtual void LoadOutputState(FILE *f) { }
+    virtual int  GetActiveBlockIndex() const { return -1; }
+    virtual void SetActiveBlockIndex(int b) { }
+
 };
 
 // project a point onto the surface
@@ -86,6 +92,8 @@ class SurfaceProjector
     virtual void GetFirstBlock(Box3 &box, vector< vector<Point3> > &pts, vector< vector<Vector3> > &norms, vector<bool> &loops, vector< vector<Point3> > &seeds) const = 0;
     virtual bool GetNextBlock(Box3 &box, vector< vector<Point3> > &pts, vector< vector<Vector3> > &norms, vector<bool> &loops, vector< vector<Point3> > &seeds) const = 0;
 	virtual int  GetBlockForPoint(const Point3 &p) const = 0;
+    virtual int  GetActiveBlockIndex() const { return -1; }
+    virtual void SetActiveBlockIndex(int b) { }
 };
 
 
@@ -113,6 +121,12 @@ class OutputController
 		}
     }
     OutputController *child;
+
+    // 2026: checkpoint support; stages that buffer output or own a file save/restore that state (default: none)
+    virtual void SaveState(FILE *f) const { }
+    virtual void LoadState(FILE *f) { }
+    static void SaveChain(const OutputController *c, FILE *f) { for (; c; c = c->child) c->SaveState(f); }
+    static void LoadChain(OutputController *c, FILE *f) { for (; c; c = c->child) c->LoadState(f); }
 };
 
 
@@ -233,6 +247,11 @@ class ControllerWrapper : public TriangulatorController
 		return projector->GetBlockForPoint(p);
 	}
 
+	void SaveOutputState(FILE *f) const { OutputController::SaveChain(output_c, f); }
+	void LoadOutputState(FILE *f) { OutputController::LoadChain(output_c, f); }
+	int  GetActiveBlockIndex() const { return projector ? projector->GetActiveBlockIndex() : -1; }
+	void SetActiveBlockIndex(int b) { if (projector) projector->SetActiveBlockIndex(b); }
+
     private:
 
     GuidanceField *guidance;
@@ -282,6 +301,10 @@ class Triangulator {
 
     Box3 bounding_box(const feli &i) const;
     real_type distance(const feli &i, const Point3 &from) const;
+    void SaveCheckpoint(const char *path);   // 2026: checkpoint/restart (checkpoint.cpp)
+    void LoadCheckpoint(const char *path);
+    void MaybeCheckpoint();
+    void KDRebuildFromHeap();
     void KDAudit(const char *where);   // 2026: -kd_audit N: compare the kd-trees with the heap levels
 
     void SetFlipOutput(bool f) { flipOutput=f; }

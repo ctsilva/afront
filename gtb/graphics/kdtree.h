@@ -2014,38 +2014,38 @@ public:
 	class OrderedTraverse {
 
 	public:
-		OrderedTraverse(BoxKDTree &root, const typename DISTBOXCLASS::Point3 &p, const DISTBOXCLASS &_distclass) : distclass(_distclass) {
+		OrderedTraverse(BoxKDTree &root, const typename DISTBOXCLASS::Point3 &p, const DISTBOXCLASS &_distclass) : distclass(_distclass), seq(0) {
 			point = p;
-			pq.push(std::pair<double, std::pair<bool,void*> >(-root.bbox.distance(p), std::pair<bool,void*>(false,&root)));
+			pq.push(Item(-root.bbox.distance(p), seq++, false, &root));
 		}
 
 		typename DISTBOXCLASS::Box3::value_type next(OBJECT &o) {
 			
 			while (!pq.empty()) {
 
-				std::pair<double, std::pair<bool,void*> > top = pq.top();
+				Item top = pq.top();
 				pq.pop();
 
-				if (top.second.first) {
+				if (top.isobj) {
 					// it's a pointer to a triangle
-					o = *(OBJECT*)top.second.second;
-					return -top.first; // we negate the disance so the smallest is at the top of the heap
+					o = *(OBJECT*)top.ptr;
+					return -top.negdist; // we negate the disance so the smallest is at the top of the heap
 				} else {
 					// otherwise it's a kdtree node index
-					BoxKDTree *node = (BoxKDTree*)top.second.second;
+					BoxKDTree *node = (BoxKDTree*)top.ptr;
 
 					// add any objects that we might have in this node
 					for (unsigned i=0; i<node->objects.size(); i++) {
-						pq.push(std::pair<double, std::pair<bool,void*> >(-distclass.distance(node->objects[i], point), std::pair<bool,void*>(true,&node->objects[i])));
+						pq.push(Item(-distclass.distance(node->objects[i], point), seq++, true, &node->objects[i]));
 					}
 
 					// add the children if they exist
 					if (node->children[0]) {
-						pq.push(std::pair<double, std::pair<bool,void*> >(-node->children[0]->bbox.distance(point), std::pair<bool,void*>(false,node->children[0])));
+						pq.push(Item(-node->children[0]->bbox.distance(point), seq++, false, node->children[0]));
 					}
 
 					if (node->children[1]) {
-						pq.push(std::pair<double, std::pair<bool,void*> >(-node->children[1]->bbox.distance(point), std::pair<bool,void*>(false,node->children[1])));
+						pq.push(Item(-node->children[1]->bbox.distance(point), seq++, false, node->children[1]));
 					}
 
 				}
@@ -2058,10 +2058,24 @@ public:
 		}
 
 	private:
-		fast_pq< std::pair<double, std::pair<bool,void*> > >  pq;
+		// 2026: entries with equal distance used to be ordered by comparing their memory addresses, which made the
+		// result depend on where the nodes happened to be allocated (a checkpoint-resumed run took other branches).
+		// Now ties are broken by insertion order, which depends only on the tree's structure.
+		struct Item {
+			Item() { }
+			Item(double d, unsigned long s, bool o, void *p) : negdist(d), seq(s), isobj(o), ptr(p) { }
+			bool operator<(const Item &r) const {
+				if (negdist != r.negdist) return negdist < r.negdist;
+				return seq > r.seq;   // earlier insertion = higher priority
+			}
+			double negdist; unsigned long seq; bool isobj; void *ptr;
+		};
+
+		fast_pq< Item >  pq;
 		typename DISTBOXCLASS::Point3 point;
 
 		const DISTBOXCLASS &distclass;
+		unsigned long seq;
 	};
 
 

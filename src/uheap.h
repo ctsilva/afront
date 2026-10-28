@@ -187,6 +187,13 @@ public:
 		return heap[level];
 	}
 
+	// 2026 (checkpoint restore): install the exact array of one level and tell every element where it is
+	void restore(int level, const std::vector<T> &v) {
+		heap[level] = v;
+		for (int i=0; i<(int)v.size(); i++)
+			heap_position(heap[level][i], level>0 ? -i-1 : i);
+	}
+
 
 
 private:

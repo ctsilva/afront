@@ -123,7 +123,14 @@ void Triangulator::AddNeighborsToRings(FrontElement &v1, FrontElement &v2) {
 
 extern real_type kd_max_step_seen;   // 2026: largest step of any vertex so far (margin of the block query)
 
+// 2026: AFRONT_TRACE=file logs every vertex/triangle creation (for comparing a resumed run with the original)
+static FILE *trace_file() {
+	static FILE *f = getenv("AFRONT_TRACE") ? fopen(getenv("AFRONT_TRACE"), "w") : NULL;
+	return f;
+}
+
 void Triangulator::CreateVertex(const Point3 &p, const Vector3 &n, FrontElement &fe, bool boundary, real_type step) {
+    if (FILE *tf = trace_file()) fprintf(tf, "V %d %.17g %.17g %.17g step %.17g\n", numVertsAdded, (double)p[0], (double)p[1], (double)p[2], (double)step);
     if (step > kd_max_step_seen) kd_max_step_seen = step;
 
     fe = FrontElement(p, n, numVertsAdded, step);
@@ -142,6 +149,7 @@ void Triangulator::CreateVertex(const Point3 &p, const Vector3 &n, FrontElement 
 
 
 void Triangulator::CreateTriangle(int v1, int v2, int v3) {
+    if (FILE *tf = trace_file()) fprintf(tf, "T %d %d %d %d\n", numFacesAdded, v1, v2, v3);
     if (flipOutput)		controller.AddTriangle(numFacesAdded, v2, v1, v3);
     else				controller.AddTriangle(numFacesAdded, v1, v2, v3);
     numFacesAdded++;
@@ -1101,7 +1109,7 @@ real_type cosangle(const Triangulator::feli &f0, const Triangulator::feli &f1, c
 
 // 2026: edits to the global kd-tree since it was last rebuilt; it is rebuilt (to rebalance it) only after
 // enough of them, so a block switch no longer costs O(open front elements) (see PLAN.md, full-RM run)
-static long long kdg_edits = 0, kdg_size_at_rebuild = 0;
+long long kdg_edits = 0, kdg_size_at_rebuild = 0;   // (not static: checkpoint.cpp saves them)
 
 void Triangulator::KDInsert(feli e) {
 	if (e->heap_position >= 0) {
@@ -1913,6 +1921,7 @@ void Triangulator::InsertBoundary(vector<Point3> &pts, vector<Vector3> &norms, b
 double sw_t_loop = 0, sw_t_bnd = 0, sw_t_area = 0, sw_t_rebuild_l = 0, sw_t_seeds = 0, sw_t_rebuild_g = 0;
 long long sw_n_scanned = 0;
 bool kdg_always_rebuild = false;
+int sw_nswitch = 0;   // block switches so far (checkpoints are numbered by it)
 bool block_scan_always = false, block_query_verify = false;
 real_type kd_max_step_seen = 0;
 
@@ -1955,7 +1964,7 @@ void Triangulator::UpdateWorkingBlock(bool first) {
     }
     ContinueProjections();
     {   // 2026: time between block switches = triangulation of the previous block
-		static double prev_end = 0, tot_switch = 0, tot_tri = 0; static int nswitch = 0;
+		static double prev_end = 0, tot_switch = 0, tot_tri = 0; extern int sw_nswitch; int &nswitch = sw_nswitch;
 		double now = get_time_seconds();
 		double tri = prev_end > 0 ? sw_start - prev_end : 0;
 		tot_switch += now - sw_start; tot_tri += tri; nswitch++;
@@ -2164,6 +2173,7 @@ void Triangulator::UpdateWorkingBlock(bool first) {
 		}
     }
     sw_t_rebuild_g += get_time_seconds() - ph;
+    MaybeCheckpoint();
 }
 
 
@@ -2228,6 +2238,11 @@ void Triangulator::Go
 
     cerr<<"starting workers"<<endl;
     StartWorkerThreads();
+    extern char *resume_from;
+    if (resume_from) {
+		// 2026: continue from a checkpoint (checkpoint.cpp) instead of setting up the first block
+		LoadCheckpoint(resume_from);
+    } else {
     cerr<<"setting up initial fronts"<<endl;
     SetupInitialFronts(ipts, inorms);
     cerr<<"setting working area"<<endl;
@@ -2247,6 +2262,7 @@ void Triangulator::Go
 
 	workingAreaRadius = INFINITY;
     UpdateWorkingArea(fronts.back()->FirstElement());
+    }
 
     vector< vector<int> > failsafe_holes;
 
@@ -2659,3 +2675,6 @@ real_type Triangulator::distance(const Front::feli &i, const Point3 &from) const
     
 }
 
+
+
+#include "checkpoint.cpp"   // 2026: Triangulator::SaveCheckpoint/LoadCheckpoint/MaybeCheckpoint

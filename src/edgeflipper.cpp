@@ -28,6 +28,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
 #include "common.h"
 #include "parallel.h"
 #include "edgeflipper.h"
+#include "ckpt_io.h"
 
 
 
@@ -627,4 +628,43 @@ void OutputControllerEdgeFlipper::FreeVert(int v) {
 
 void OutputControllerEdgeFlipper::FreeTri(int t) {
     available_tris.push_back(t);
+}
+
+
+// 2026: checkpoint support -- the flipper buffers vertices and triangles before they reach the output file
+void OutputControllerEdgeFlipper::SaveState(FILE *fp) const {
+	CkptOut o(fp);
+	o.tag("EFLP");
+	o.i64(verts.size());
+	for (size_t i=0; i<verts.size(); i++) {
+		const EdgeFlipperVertex &v = verts[i];
+		o.pod(v.boundary); o.pod(v.onfront); o.pod(v.index); o.pod(v.position); o.pod(v.normal);
+		o.ints(v.incidentTriangles); o.ints(v.incidentVerticesLocal); o.ints(v.incidentVerticesGlobal);
+	}
+	o.i64(tris.size());
+	for (size_t i=0; i<tris.size(); i++) { o.put(tris[i].vi, sizeof tris[i].vi); o.pod(tris[i].index); }
+	o.i64(global_to_local_vi.size());
+	for (std::map<int,int>::const_iterator i=global_to_local_vi.begin(); i!=global_to_local_vi.end(); ++i) { o.pod(i->first); o.pod(i->second); }
+	o.podvec(available_verts);
+	o.podvec(available_tris);
+}
+
+void OutputControllerEdgeFlipper::LoadState(FILE *fp) {
+	CkptIn in(fp);
+	in.tag("EFLP");
+	verts.clear(); tris.clear(); global_to_local_vi.clear();
+	long long n = in.i64();
+	verts.resize(n);
+	for (long long i=0; i<n; i++) {
+		EdgeFlipperVertex &v = verts[i];
+		in.pod(v.boundary); in.pod(v.onfront); in.pod(v.index); in.pod(v.position); in.pod(v.normal);
+		in.ints(v.incidentTriangles); in.ints(v.incidentVerticesLocal); in.ints(v.incidentVerticesGlobal);
+	}
+	n = in.i64();
+	tris.resize(n);
+	for (long long i=0; i<n; i++) { in.get(tris[i].vi, sizeof tris[i].vi); in.pod(tris[i].index); }
+	n = in.i64();
+	for (long long i=0; i<n; i++) { int a, b; in.pod(a); in.pod(b); global_to_local_vi[a] = b; }
+	in.podvec(available_verts);
+	in.podvec(available_tris);
 }

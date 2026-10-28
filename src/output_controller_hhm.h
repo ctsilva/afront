@@ -29,12 +29,15 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
 
 #include "triangulator.h"
 #include <fstream>
+#include <string>
 
 class OutputControllerHHM : public OutputController
 {
 public:
-    OutputControllerHHM(const char *filename):
-      fout(filename?new std::ofstream(filename):NULL), vkey(NULL) {};
+    // 2026: resume=true opens the existing file without truncating it (LoadState cuts it back to the checkpoint)
+    OutputControllerHHM(const char *filename, bool resume=false):
+      fout(filename ? (resume ? new std::ofstream(filename, std::ios::in|std::ios::out) : new std::ofstream(filename)) : NULL),
+      vkey(NULL), fname(filename ? filename : "") {};
     virtual ~OutputControllerHHM() { delete fout; };
     virtual void AddVertex(int index, const Point3 &p, const Vector3 &n, bool boundary);
     virtual void AddTriangle(int index, int v1, int v2, int v3);
@@ -43,10 +46,15 @@ public:
 
 	void SetVertexKey(const char *key) { vkey=key; }
 
+	// 2026: checkpoint support: remember the file size, cut the file back to it on restore
+	void SaveState(FILE *f) const;
+	void LoadState(FILE *f);
+
 protected:
     std::ofstream *fout;
 
 	const char *vkey;
+	std::string fname;
 };
 
 #endif

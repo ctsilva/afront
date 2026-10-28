@@ -466,6 +466,8 @@ class IsoSurfaceProjector : public SurfaceProjector {
     void GetFirstBlock(Box3 &box, vector< vector<Point3> > &pts, vector< vector<Vector3> > &norms, vector<bool> &loops, vector< vector<Point3 > > &seeds) const {
 		volume.GetFirstBlock(box, pts, norms, loops, seeds);
     }
+    int  GetActiveBlockIndex() const { return volume.GetActiveBlock(); }
+    void SetActiveBlockIndex(int b) { volume.SetActiveBlock(b); }
     bool GetNextBlock(Box3 &box, vector< vector<Point3> > &pts, vector< vector<Vector3> > &norms, vector<bool> &loops, vector< vector<Point3 > > &seeds) const {
 		return volume.GetNextBlock(box, pts, norms, loops, seeds);
     }

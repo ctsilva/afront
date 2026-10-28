@@ -71,6 +71,10 @@ public:
 
     void Draw();
 
+    // 2026: checkpoint support
+    void SaveState(FILE *f) const;
+    void LoadState(FILE *f);
+
 protected:
 
  

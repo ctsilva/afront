@@ -87,6 +87,9 @@ const TriangleMesh *ctetshell = &tetshell;
 char defoutname[] = "outmesh.m";
 char *outname = defoutname;
 char *gf_prefix = NULL;
+// 2026: checkpoint/restart (checkpoint.cpp)
+char *checkpoint_dir = NULL, *resume_from = NULL;
+int checkpoint_every = 0, checkpoint_keep = 0, checkpoint_keep_every = 0;
 char *histname = NULL;
 char *histfigname = NULL;
 static char *gffile = NULL;
@@ -186,7 +189,7 @@ OutputController* GetOutputController(bool edgeflip=true, bool ocgui=true) {
 	}
 
 	if (endswith(outname, ".m")) {
-		OutputController::AddControllerToBack(ret, new OutputControllerHHM(outname));
+		OutputController::AddControllerToBack(ret, new OutputControllerHHM(outname, resume_from != NULL));
 	} else if (endswith(outname, ".obj")) {
 		OutputController::AddControllerToBack(ret, new OutputControllerOBJ(outname));
 	} else if (endswith(outname, ".sma") ||
@@ -3414,6 +3417,11 @@ int main(int argc, char* argv[]) {
 	CL_ADD_VAR(cl,iso_scale,		  ": scale volume scalars by this value");
 	CL_ADD_VAR(cl,trim_guidance,	  ": trim the guindance field or use the full point set");
 	CL_ADD_VAR(cl,trim_bin_size,	  ": when to stop subdivision for guidance field trimming");
+    CL_ADD_VAR(cl,checkpoint_dir,     ": write checkpoints (ckpt_NNNNNN.afck, NNNNNN = block switch) to this directory");
+    CL_ADD_VAR(cl,checkpoint_every,   ": take a checkpoint every N block switches (needs -checkpoint_dir)");
+    CL_ADD_VAR(cl,checkpoint_keep,    ": keep only the newest K checkpoints (0 = keep all)");
+    CL_ADD_VAR(cl,checkpoint_keep_every, ": with -checkpoint_keep, also keep every M-th switch's checkpoint forever");
+    CL_ADD_VAR(cl,resume_from,        ": continue triangulating from this checkpoint file (same volume, -outname, rho, max_step, -reuse_guidance t -reuse_seeds t)");
     CL_ADD_VAR(cl,gf_prefix,          ": prefix for saving the gf");
     CL_ADD_VAR(cl,block_scan_always,  ": at a block switch, scan every front element for ones entering the block (2009 behavior); default: kd-tree box query");
     CL_ADD_VAR(cl,block_query_verify, ": also run the full scan after the block query and report any element the query missed");

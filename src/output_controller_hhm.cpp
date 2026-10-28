@@ -27,6 +27,9 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
 #include "common.h"
 #include "parallel.h"
 #include "output_controller_hhm.h"
+#include "ckpt_io.h"
+#include <unistd.h>
+#include <sys/stat.h>
 
 void OutputControllerHHM::AddVertex(int index, const Point3 &p, const Vector3 &n, bool boundary)
 {
@@ -57,3 +60,29 @@ void OutputControllerHHM::AddTriangle(int index, int v1, int v2, int v3)
 	child->AddTriangle(index, v1, v2, v3);
 }
 
+
+
+void OutputControllerHHM::SaveState(FILE *f) const {
+	CkptOut o(f);
+	o.tag("HHM ");
+	long long pos = 0;
+	if (fout) { fout->flush(); pos = (long long)fout->tellp(); }
+	o.i64(pos);
+}
+
+void OutputControllerHHM::LoadState(FILE *f) {
+	CkptIn in(f);
+	in.tag("HHM ");
+	long long pos = in.i64();
+	if (!fout) return;
+	fout->flush();
+	struct stat st;
+	if (!fout->is_open() || stat(fname.c_str(), &st) != 0 || (long long)st.st_size < pos) {
+		fprintf(stderr, "checkpoint: output file %s is missing or shorter (%lld) than the checkpoint position (%lld)\n",
+				fname.c_str(), fout->is_open() && stat(fname.c_str(), &st)==0 ? (long long)st.st_size : -1LL, pos);
+		exit(2);
+	}
+	if (truncate(fname.c_str(), pos) != 0) { perror("checkpoint: truncate output"); exit(2); }
+	fout->clear();
+	fout->seekp(pos);
+}
