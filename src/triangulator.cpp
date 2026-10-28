@@ -1125,8 +1125,10 @@ void Triangulator::KDRemove(feli e) {
 		if (!ok) ok = kdtree_l.Remove(*this, e);
 	}
 	if (!ok) {
+		// the element's box changed since it was inserted (or it was never inserted): search without box pruning
+		ok = kdtree_l.Remove(*this, e, true) || kdtree_g.Remove(*this, e, true);
 		static int nmiss = 0;
-		if (nmiss++ < 20) fprintf(stderr, "[KDMISS] KDRemove did not find element %p (heap_position=%d)\n", (void*)&*e, e->heap_position);
+		if (nmiss++ < 20) fprintf(stderr, "[KDMISS] KDRemove did not find element %p by box (heap_position=%d); forced search %s\n", (void*)&*e, e->heap_position, ok ? "found it" : "FAILED");
 	}
 }
 

@@ -1926,9 +1926,11 @@ public:
 
 
 
-	bool Remove(const DISTBOXCLASS &boxclass, const OBJECT &o) {
+	// force: ignore the bounding boxes and search the whole tree (slow path, used when the object's box has changed
+	// since it was inserted, so the box-pruned search cannot find it)
+	bool Remove(const DISTBOXCLASS &boxclass, const OBJECT &o, bool force=false) {
 
-		if (bbox.classify_position(boxclass.bounding_box(o)) == DISTBOXCLASS::Box3::OUTSIDE)
+		if (!force && bbox.classify_position(boxclass.bounding_box(o)) == DISTBOXCLASS::Box3::OUTSIDE)
 			return false;
 
 
@@ -1975,7 +1977,7 @@ public:
 		// if we got here, we didn't find a match is the object list - check the children
 
 		for (int c=0; c<2; c++) {
-			if (children[c] && children[c]->Remove(boxclass, o)) {
+			if (children[c] && children[c]->Remove(boxclass, o, force)) {
 				int dangle = children[c]->dangling();
 				if (dangle != -1) {
 
