@@ -1942,13 +1942,23 @@ public:
 				}
 				objects.pop_back();
 
-				// recompute the bounding box
-				if (objects.size() > 0) {
-			        bbox = boxclass.bounding_box(objects[0]);
-					for (unsigned i=1; i<objects.size(); i++) {
-						bbox = DISTBOXCLASS::Box3::make_union(bbox, boxclass.bounding_box(objects[i]));
+				// recompute the bounding box -- it must cover the whole subtree (Insert unions into every node on
+				// the path), not just this node's own objects. 2026: the old code used only the objects (or a
+				// dummy [-1,1]^3 box when none were left), which made later Remove/GetIntersectedBoxes prune
+				// live children, leaving stale (later freed) entries in the tree.
+				bool have_box = false;
+				for (unsigned i=0; i<objects.size(); i++) {
+					typename DISTBOXCLASS::Box3 ob = boxclass.bounding_box(objects[i]);
+					bbox = have_box ? DISTBOXCLASS::Box3::make_union(bbox, ob) : ob;
+					have_box = true;
+				}
+				for (int c=0; c<2; c++) {
+					if (children[c]) {
+						bbox = have_box ? DISTBOXCLASS::Box3::make_union(bbox, children[c]->bbox) : children[c]->bbox;
+						have_box = true;
 					}
-				} else {
+				}
+				if (!have_box) {
 				    typename DISTBOXCLASS::Point3
 					u(-1,-1,-1),
 					d(1,1,1);

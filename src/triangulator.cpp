@@ -1114,11 +1114,19 @@ void Triangulator::KDInsert(feli e) {
 
 
 void Triangulator::KDRemove(feli e) {
+	// 2026: check that the element was really found; a failed removal leaves a stale entry that dangles once e is freed
+	bool ok;
 	if (e->heap_position >= 0) {
-		kdtree_l.Remove(*this, e);
+		ok = kdtree_l.Remove(*this, e);
+		if (!ok) ok = kdtree_g.Remove(*this, e);
 	} else {
-		kdtree_g.Remove(*this, e);
+		ok = kdtree_g.Remove(*this, e);
 		kdg_edits++;
+		if (!ok) ok = kdtree_l.Remove(*this, e);
+	}
+	if (!ok) {
+		static int nmiss = 0;
+		if (nmiss++ < 20) fprintf(stderr, "[KDMISS] KDRemove did not find element %p (heap_position=%d)\n", (void*)&*e, e->heap_position);
 	}
 }
 
