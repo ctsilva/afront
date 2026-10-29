@@ -154,6 +154,7 @@ void Triangulator::CreateVertex(const Point3 &p, const Vector3 &n, FrontElement 
     }
     if (FILE *tf = trace_file()) fprintf(tf, "V %d %.17g %.17g %.17g step %.17g\n", numVertsAdded, (double)p[0], (double)p[1], (double)p[2], (double)step);
     if (step > kd_max_step_seen) kd_max_step_seen = step;
+    if (track_vertices) audit_pts.push_back(p);
 
     fe = FrontElement(p, n, numVertsAdded, step);
     controller.AddVertex(numVertsAdded, p, flipOutput?-n:n, boundary);
@@ -2056,6 +2057,64 @@ void Triangulator::KDAudit(const char *where) {
 	}
 }
 
+// Try to start a connected component at one of the candidate points of a seed: a two-vertex front. Returns false if none of the
+// points can be used (not projectable, normals disagree, or something is already there). With skipped != NULL, points outside the
+// working box of a block at a slab cut are skipped (parallel slabs; they are reported in *skipped so the caller can defer them).
+bool Triangulator::TryAddSeed(const vector<Point3> &cands, bool *skipped, real_type min_half_box) {
+	Point3 p1, p2;
+	Vector3 n1, n2;
+	extern bool slab_box_shrunk;
+	for (unsigned j=0; j<cands.size(); j++) {
+		Point3 sp = cands[j];
+
+		// 2026 (parallel slabs): in a block at a cut the working box is shrunk; a seed in the strip would put vertices
+		// there (its second vertex is a step away), where the other slab's fronts will be
+		if (skipped && slab_box_shrunk && haveWorkingBlock && !workingBlock.contains(sp)) {
+			*skipped = true;
+			continue;
+		}
+
+		if (controller.ProjectPoint(sp, p1, n1) != PROJECT_SUCCESS)
+			continue;
+
+		Vector3 udir, vdir;
+		void PerpVectors(const Vector3 &n, Vector3 &udir, Vector3 &vdir);
+		PerpVectors(n1, udir, vdir);
+
+		Point3 sp2 = p1 + controller.MaxStepLength(p1)*udir;
+
+		if (controller.ProjectPoint(sp2, p2, n2) != PROJECT_SUCCESS)
+			continue;
+
+		// don't use it if the two endpoints have opposite norms
+		if (n1.dot(n2) < 0.4)
+			continue;
+
+		// don't use it if we're too close to something that is already there
+		vector<feli> close_edges;
+		Point3 center = p1 + ((real_type)0.5)*(p2-p1);
+		real_type length = Point3::distance(p1,p2);
+		real_type half = std::max((real_type)(2*length), min_half_box);   // deferred seeds: look as far as the strip is wide
+		Box3 box(Point3(center)-Vector3(half,half,half),
+				 Point3(center)+Vector3(half,half,half));
+
+		KDIntersectedBoxes(box, close_edges);
+		if (close_edges.size())
+			continue;
+
+		vector<Point3> ipts(2);
+		vector<Vector3> inorms(2);
+		ipts[0] = p1;
+		ipts[1] = p2;
+		inorms[0] = n1;
+		inorms[1] = n2;
+
+		SetupInitialFront(ipts, inorms, true);
+		return true;
+	}
+	return false;
+}
+
 void Triangulator::UpdateWorkingBlock(bool first) {
 
     vector< vector<Point3> > new_pts;
@@ -2077,6 +2136,17 @@ void Triangulator::UpdateWorkingBlock(bool first) {
 		// parallel slabs: the last block is done. Stop here (the front elements that wait for blocks outside this slab are
 		// still gated) and save the state; the merge run closes the seams.
 		slab_finished = true;
+		{   // deferred seeds that this slab's own mesh covers need no further attention; keep the vertices near the cut sides
+			int before = (int)deferred_seeds.size();
+			RemoveCoveredSeeds(deferred_seeds);
+			extern int slab_axis; extern double slab_margin; extern real_type get_max_step();
+			real_type lo = 1e30, hi = -1e30;
+			for (size_t i=0; i<audit_pts.size(); i++) { lo = std::min(lo, audit_pts[i][slab_axis]); hi = std::max(hi, audit_pts[i][slab_axis]); }
+			real_type D = (real_type)(slab_margin + 2 * 1.5 * get_max_step() + 1);
+			zone_pts.clear();
+			for (size_t i=0; i<audit_pts.size(); i++) if (audit_pts[i][slab_axis] <= lo + D || audit_pts[i][slab_axis] >= hi - D) zone_pts.push_back(audit_pts[i]);
+			fprintf(stderr, "\n[SLAB] deferred seeds: %d, %zu not covered by this slab's own mesh; %zu vertices near the cut sides kept (of %zu)\n", before, deferred_seeds.size(), zone_pts.size(), audit_pts.size());
+		}
 		SaveCheckpoint(slab_save);
 		return;
     }
@@ -2194,66 +2264,11 @@ void Triangulator::UpdateWorkingBlock(bool first) {
 
     // add new connected component seeds
     for (unsigned i=0; i<new_seeds.size(); i++) {
-		bool done = false;
-		Point3 p1, p2;
-		Vector3 n1, n2;
-
-		for (unsigned j=0; j<new_seeds[i].size(); j++) {
-
-			Point3 sp = new_seeds[i][j];
-
-			// 2026 (parallel slabs): in a block at a cut the working box is shrunk; a seed in the strip would put vertices
-			// there (its second vertex is a step away), where the other slab's fronts will be. Reach that surface from the fronts.
-			extern bool slab_box_shrunk;
-			if (slab_box_shrunk && haveWorkingBlock && !workingBlock.contains(sp))
-				continue;
-
-			if (controller.ProjectPoint(sp, p1, n1) != PROJECT_SUCCESS)
-				continue;
-
-	    
-			Vector3 udir, vdir;
-			void PerpVectors(const Vector3 &n, Vector3 &udir, Vector3 &vdir);
-			PerpVectors(n1, udir, vdir);
-
-			Point3 sp2 = p1 + controller.MaxStepLength(p1)*udir;
-
-			if (controller.ProjectPoint(sp2, p2, n2) != PROJECT_SUCCESS)
-				continue;
-
-
-			// don't use it if the two endpoints have opposite norms
-			if (n1.dot(n2) < 0.4)
-				continue;
-
-
-			// don't use it if we're too close to something that is already there
-			vector<feli> close_edges;
-			Point3 center = p1 + ((real_type)0.5)*(p2-p1);
-			real_type length = Point3::distance(p1,p2);
-			Box3 box(Point3(center)-Vector3(2*length,2*length,2*length),
-					 Point3(center)+Vector3(2*length,2*length,2*length));
-			
-			KDIntersectedBoxes(box, close_edges);
-			if (close_edges.size())
-				continue;
-
-			done = true; 
-			break;
-		}
-
+		bool skipped = false;
+		bool done = TryAddSeed(new_seeds[i], &skipped);
 		if (!done) {
-			cerr<<"couldn't project seed point"<<endl;
-		} else {
-
-			vector<Point3> ipts(2);
-			vector<Vector3> inorms(2);
-			ipts[0] = p1;
-			ipts[1] = p2;
-			inorms[0] = n1;
-			inorms[1] = n2;
-
-			SetupInitialFront(ipts, inorms, true);
+			if (skipped) deferred_seeds.push_back(new_seeds[i]);   // parallel slabs: the merge run will try it
+			else cerr<<"couldn't project seed point"<<endl;
 		}
     }
 
@@ -2403,13 +2418,16 @@ void Triangulator::Go
     cerr << "[TIMING] Starting triangulation (using " << work_threads.size() << " projector threads)..." << endl;
 	bool seen_failsafe = false;
 
+    { extern int slab_z1; if (slab_z1 >= 0) track_vertices = true; }   // 2026: parallel slabs: remember the vertices (seed coverage)
     ckpt_ready = true;   // checkpoints only from here on: the setup above is not replayed when resuming
     while (true) {
 		if (slab_finished) break;
 		if (heap.empty()) {
 			// stop if we have no more working blocks
-			if (!haveWorkingBlock)
+			if (!haveWorkingBlock) {
+				if (merge_audit && AuditDeferredSeeds()) continue;   // 2026: parallel slabs: components nobody covered
 				break;
+			}
 			UpdateWorkingBlock();
 			cerr<<"new working block"<<endl;
 			continue;
@@ -2774,7 +2792,9 @@ Triangulator::Triangulator(TriangulatorController &c)
       work_quit(false),
       work_pause(false),
       work_num_paused(0),
-      max_active_verts(0)
+      max_active_verts(0),
+      merge_audit(false),
+      track_vertices(false)
 {
 
     vertinfo.reserve(10000);

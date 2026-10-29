@@ -25,7 +25,7 @@ extern bool ckpt_ready;
 extern long long kdg_edits, kdg_size_at_rebuild;
 extern real_type kd_max_step_seen;
 
-static const int CKPT_VERSION = 1;
+static const int CKPT_VERSION = 3;   // 2: + deferred seeds; 3: + zone vertices
 
 
 // make both kd-trees match the heap levels exactly (also used right after loading)
@@ -91,6 +91,9 @@ void Triangulator::SaveCheckpoint(const char *path) {
 	o.pod(haveWorkingBlock); o.pod(workingBlock); o.pod(workingAreaRadius); o.pod(workingAreaCenter);
 	o.pod(kd_max_step_seen); o.pod(kdg_edits); o.pod(kdg_size_at_rebuild); o.pod(sw_nswitch);
 	int ab = controller.GetActiveBlockIndex(); o.pod(ab);
+	o.i64(deferred_seeds.size());
+	for (size_t i=0; i<deferred_seeds.size(); i++) { o.i64(deferred_seeds[i].size()); for (size_t j=0; j<deferred_seeds[i].size(); j++) o.pod(deferred_seeds[i][j]); }
+	o.podvec(zone_pts);
 
 	controller.SaveOutputState(fp);
 	o.tag("END!");
@@ -106,6 +109,8 @@ void Triangulator::SaveCheckpoint(const char *path) {
 extern int vertex_offset, face_offset;
 static std::vector<Triangulator::feli> g_merge_elems;      // parallel slabs: elements collected from all merged states
 static std::vector<Triangulator::feli> g_merge_unprojected;
+static std::vector<Point3> g_merge_zone;   // vertices near the cut sides of all merged slabs
+static std::vector< std::vector<Point3> > g_merge_deferred;   // seeds deferred by the slab runs
 static std::vector<int> g_merge_conn_state;   // for each boundary connector: index of the state file it came from
 static int g_merge_state = 0;
 
@@ -179,6 +184,15 @@ void Triangulator::LoadCheckpointImpl(const char *path, bool merge) {
 		}
 	}
 	int ab; in.pod(ab);
+	{
+		long long nd = in.i64();
+		for (long long i=0; i<nd; i++) {
+			long long m = in.i64(); std::vector<Point3> l(m);
+			for (long long j=0; j<m; j++) in.pod(l[j]);
+			if (merge) g_merge_deferred.push_back(l); else deferred_seeds.push_back(l);
+		}
+	}
+	{ std::vector<Point3> z; in.podvec(z); if (merge) g_merge_zone.insert(g_merge_zone.end(), z.begin(), z.end()); else zone_pts = z; }
 	if (!merge) { controller.SetActiveBlockIndex(ab); controller.LoadOutputState(fp); }
 	else controller.MergeOutputState(fp);
 	in.tag("END!");
@@ -226,6 +240,16 @@ void Triangulator::MergeCheckpoints(const char *list) {
 	KDRebuildFromHeap();
 	for (size_t i=0; i<g_merge_unprojected.size(); i++) RequestProjection(g_merge_unprojected[i]);
 	if (!getenv("AFRONT_NO_STITCH")) StitchConnectors(g_merge_conn_state);
+	{   // seeds that the slab runs skipped because they lay in a cut strip are checked at the end of the run (AuditDeferredSeeds):
+		// a seed whose surface point has no vertex nearby once everything is meshed belonged to a component nobody covered
+		merge_deferred = g_merge_deferred;
+		merge_audit = true;
+		for (size_t i=0; i<g_merge_elems.size(); i++) audit_pts.push_back(g_merge_elems[i]->position);
+		audit_pts.insert(audit_pts.end(), g_merge_zone.begin(), g_merge_zone.end());
+		track_vertices = true;
+		fprintf(stderr, "\n[STITCH] %zu deferred seeds from the slab runs (checked at the end of the run)\n", merge_deferred.size());
+	}
+
 	fprintf(stderr, "\n[CHECKPOINT] merged %zu front elements (%zu fronts); new vertices start at %d, faces at %d\n",
 			g_merge_elems.size(), fronts.size(), vertex_offset, face_offset);
 }
@@ -418,4 +442,52 @@ void Triangulator::StitchConnectors(const std::vector<int> &state_of_in) {
 				state_of[i], (double)c->position[0], (double)c->position[1], (double)c->position[2], (double)best, (double)bdot, bj >= 0 ? state_of[bj] : -1);
 	}
 	fprintf(stderr, "\n[STITCH] joined %d connector pairs between the merged states, closed %d loops; %zu connectors left unmatched\n", njoined, nclosed, boundary_connectors.size());
+}
+
+
+// Parallel slabs, end of the merge run: start the components that nobody covered. A deferred seed (see TryAddSeed) is covered if a
+// vertex of the merge run (or a front vertex it started from) lies within 1.5 local steps of the seed's point on the surface.
+int Triangulator::RemoveCoveredSeeds(vector< vector<Point3> > &seeds) {
+	if (seeds.empty()) return 0;
+	extern real_type get_max_step();
+	const real_type cell = 2 * get_max_step();
+	auto key = [&](const Point3 &p) { return ((long long)floor(p[0]/cell) * 73856093LL) ^ ((long long)floor(p[1]/cell) * 19349663LL) ^ ((long long)floor(p[2]/cell) * 83492791LL); };
+	std::unordered_map<long long, std::vector<int> > cells;
+	for (size_t i=0; i<audit_pts.size(); i++) cells[key(audit_pts[i])].push_back((int)i);
+	std::vector< std::vector<Point3> > keep; int removed = 0;
+	for (size_t i=0; i<seeds.size(); i++) {
+		bool covered = false;
+		for (size_t j=0; j<seeds[i].size(); j++) {
+			Point3 p1; Vector3 n1;
+			if (controller.ProjectPoint(seeds[i][j], p1, n1) != PROJECT_SUCCESS) continue;
+			real_type R = (real_type)1.5 * controller.MaxStepLength(p1);
+			for (int dx=-1; dx<=1 && !covered; dx++) for (int dy=-1; dy<=1 && !covered; dy++) for (int dz=-1; dz<=1 && !covered; dz++) {
+				Point3 q(p1[0]+dx*cell, p1[1]+dy*cell, p1[2]+dz*cell);
+				std::unordered_map<long long, std::vector<int> >::iterator it = cells.find(key(q));
+				if (it == cells.end()) continue;
+				for (size_t m=0; m<it->second.size(); m++) if (Point3::distance(audit_pts[it->second[m]], p1) < R) { covered = true; break; }
+			}
+			break;   // the first projectable candidate decides
+		}
+		if (covered) removed++; else keep.push_back(seeds[i]);
+	}
+	seeds.swap(keep);
+	return removed;
+}
+
+// Parallel slabs, end of the merge run: start the components that nobody covered. A deferred seed (see TryAddSeed) is covered if a
+// vertex of the merge run, a front vertex it started from, or a vertex near the cut sides of any slab lies within 1.5 local steps
+// of the seed's point on the surface.
+bool Triangulator::AuditDeferredSeeds() {
+	if (merge_deferred.empty()) return false;
+	int ncovered = RemoveCoveredSeeds(merge_deferred);
+	int nstarted = 0;
+	std::vector< std::vector<Point3> > rest;
+	for (size_t i=0; i<merge_deferred.size(); i++) {
+		if (TryAddSeed(merge_deferred[i], NULL, 0)) nstarted++;
+		else rest.push_back(merge_deferred[i]);
+	}
+	merge_deferred.clear();
+	fprintf(stderr, "\n[STITCH] audit of deferred seeds: %d covered, %d started (%zu could not be started)\n", ncovered, nstarted, rest.size());
+	return nstarted > 0;
 }

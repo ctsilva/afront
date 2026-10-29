@@ -415,6 +415,12 @@ class Triangulator {
 
     bool InWorkingBlock(feli e1, feli e2);
     void UpdateWorkingBlock(bool first=false);
+    bool TryAddSeed(const vector<Point3> &cands, bool *skipped, real_type min_half_box = 0);
+    bool AuditDeferredSeeds();
+    int  RemoveCoveredSeeds(vector< vector<Point3> > &seeds);   // drop the seeds whose surface point has a vertex of audit_pts nearby
+    vector<Point3> zone_pts;   // slab runs: own vertices near the cut sides, saved so that the merge run can tell what the slab covered
+    vector< vector<Point3> > merge_deferred; vector<Point3> audit_pts; bool merge_audit; bool track_vertices;   // merge run: seeds to audit, vertex positions for the audit
+    vector< vector<Point3> > deferred_seeds;   // parallel slabs: seeds in a cut strip, started by the merge run
     bool haveWorkingBlock;
     Box3 workingBlock;
 

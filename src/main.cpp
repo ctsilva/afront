@@ -104,6 +104,7 @@ real_type rho = (real_type)(M_PI * 2.0 / 32.0); // ~ 0.2
 static real_type sharp = -2.0; // if cos dihedralangle < sharp, treat it as crease
 static real_type min_step = (real_type) 0;
 static real_type max_step = (real_type) 1000000;
+real_type get_max_step() { return max_step; }   // (2026: for checkpoint.cpp)
 real_type reduction = (real_type)0.8;
 real_type radius_factor = 2.0f;
 static bool csg_guidance_blend = true;
