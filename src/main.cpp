@@ -92,6 +92,8 @@ char *checkpoint_dir = NULL, *resume_from = NULL;
 // 2026: parallel slabs (see PLAN.md): phase 1 runs restrict the volume to block layers [slab_z0,slab_z1) and save their end state
 char *slab_save = NULL, *merge_states = NULL, *weld_file = NULL;
 int vertex_offset = 0, face_offset = 0;
+int parallel_slabs = 1, parallel_axis = -1; int slab_keep = 0;   // -parallel_slabs K: run K slab processes + a merge (do_tri_slabs)
+static int g_argc = 0; static char **g_argv = NULL;
 extern int slab_z0, slab_z1, slab_axis;
 extern double slab_margin;
 int checkpoint_every = 0, checkpoint_keep = 0, checkpoint_keep_every = 0;
@@ -909,6 +911,145 @@ int do_csg(int argc, char* argv[]) {
 }
 
 
+
+#include <sys/wait.h>
+#include <sys/stat.h>
+#include <map>
+#include <set>
+
+// ---------------------------------------------------------------------------------------------------------------------
+// 2026: -parallel_slabs K (see PLAN.md, "parallel slabs"). The volume is cut into K slabs of whole block layers along the
+// axis that gives the most even split of the guidance-field sizes (a proxy for the surface in each block); each slab is
+// triangulated by its own afront process, then one more process merges the leftover fronts of all slabs and closes the seams;
+// the meshes are concatenated, duplicate vertices at the cuts welded, and written to -outname.
+static long long file_size_or0(const char *fn) { struct stat st; return stat(fn, &st) == 0 ? (long long)st.st_size : 0; }
+
+static pid_t spawn_self(const std::vector<std::string> &args, const char *logname) {
+	pid_t pid = fork();
+	if (pid == 0) {
+		std::vector<char*> av;
+		for (size_t i=0; i<args.size(); i++) av.push_back((char*)args[i].c_str());
+		av.push_back(NULL);
+		FILE *lf = fopen(logname, "w"); if (lf) { dup2(fileno(lf), 1); dup2(fileno(lf), 2); }
+		execv("/proc/self/exe", av.data());
+		_exit(127);
+	}
+	return pid;
+}
+
+static bool wait_ok(pid_t pid, const char *what) {
+	int st = 0; waitpid(pid, &st, 0);
+	if (!WIFEXITED(st) || WEXITSTATUS(st) != 0) { fprintf(stderr, "[SLABS] %s failed (status %d)\n", what, st); return false; }
+	return true;
+}
+
+int do_tri_slabs(const char *iso, bool bspline) {
+	OOCVolume *ov = dynamic_cast<OOCVolume*>(volume);
+	if (!ov) { fprintf(stderr, "-parallel_slabs needs an out-of-core volume (.nooc)\n"); exit(1); }
+	int nb[3] = { ov->GetNBlocksAxis(0), ov->GetNBlocksAxis(1), ov->GetNBlocksAxis(2) };
+	int K = parallel_slabs;
+	std::vector<double> layer[3];
+	for (int a=0; a<3; a++) layer[a].assign(nb[a], 0.0);
+	for (int x=0; x<nb[0]; x++) for (int y=0; y<nb[1]; y++) for (int z=0; z<nb[2]; z++) {
+		int b[3] = { x, y, z };
+		char fn[1024], full[1100];
+		Volume::BlockString(gf_prefix==NULL ? "gf" : gf_prefix, b, fn);
+		sprintf(full, "./oocgf/%s", fn);
+		double c = 1.0 + (double)file_size_or0(full);
+		for (int a=0; a<3; a++) layer[a][b[a]] += c;
+	}
+	// best split of the layers of each axis into K contiguous slabs (minimize the largest slab), dynamic programming
+	int best_axis = -1; double best_cost = 1e300; std::vector<int> best_cuts;
+	for (int a=0; a<3; a++) {
+		if (parallel_axis >= 0 && a != parallel_axis) continue;
+		int n = nb[a]; if (n < K) continue;
+		std::vector<double> pre(n+1, 0.0); for (int i=0; i<n; i++) pre[i+1] = pre[i] + layer[a][i];
+		std::vector< std::vector<double> > dp(K+1, std::vector<double>(n+1, 1e300)); std::vector< std::vector<int> > cut(K+1, std::vector<int>(n+1, 0));
+		dp[0][0] = 0;
+		for (int k=1; k<=K; k++) for (int i=k; i<=n; i++) for (int j=k-1; j<i; j++) {
+			double v = std::max(dp[k-1][j], pre[i]-pre[j]);
+			if (v < dp[k][i]) { dp[k][i] = v; cut[k][i] = j; }
+		}
+		if (dp[K][n] < best_cost) {
+			best_cost = dp[K][n]; best_axis = a; best_cuts.assign(K+1, 0);
+			int i = n; for (int k=K; k>=1; k--) { best_cuts[k] = i; i = cut[k][i]; } best_cuts[0] = 0;
+		}
+	}
+	if (best_axis < 0) { fprintf(stderr, "-parallel_slabs %d: the volume has too few block layers\n", K); exit(1); }
+	double total = 0; for (int i=0; i<nb[best_axis]; i++) total += layer[best_axis][i];
+	fprintf(stderr, "\n[SLABS] %d slabs along axis %d (%d block layers); largest slab holds %.0f%% of the guidance data (ideal %.0f%%):", K, best_axis, nb[best_axis], 100*best_cost/total, 100.0/K);
+	for (int k=0; k<K; k++) fprintf(stderr, " [%d,%d)", best_cuts[k], best_cuts[k+1]);
+	fprintf(stderr, "\n");
+
+	std::string base(outname); { size_t d = base.rfind('.'); if (d != std::string::npos) base = base.substr(0, d); }
+	int total_threads = std::max(idealNumThreads, 2*K);
+	int per = std::max(2, total_threads / K);
+	long long stride = 2000000000LL / (K + 2);
+
+	// the original command line, minus the options that are replaced for the children
+	std::vector<std::string> common; size_t tri_at = 0;
+	for (int i=0; i<g_argc; i++) {
+		std::string t = g_argv[i];
+		if (t == "-tri") { tri_at = i; break; }
+		if (t == "-parallel_slabs" || t == "-parallel_axis" || t == "-outname" || t == "-idealNumThreads" || t == "-checkpoint_dir" || t == "-checkpoint_every" ||
+			t == "-checkpoint_keep" || t == "-checkpoint_keep_every" || t == "-resume_from" || t == "-slab_keep") { i++; continue; }
+		common.push_back(t);
+	}
+	if (!tri_at) tri_at = g_argc;
+	std::vector<std::string> tail; for (int i=(int)tri_at; i<g_argc; i++) tail.push_back(g_argv[i]);
+	auto build = [&](const std::vector<std::string> &extra) { std::vector<std::string> v = common; v.insert(v.end(), extra.begin(), extra.end()); v.insert(v.end(), tail.begin(), tail.end()); return v; };
+	auto S = [](long long x) { char b[64]; sprintf(b, "%lld", x); return std::string(b); };
+
+	double t0 = 0; { struct timeval tv; gettimeofday(&tv, NULL); t0 = tv.tv_sec + 1e-6*tv.tv_usec; }
+	std::vector<pid_t> pids; std::string states;
+	for (int k=0; k<K; k++) {
+		std::string sb = base + ".slab" + S(k);
+		std::vector<std::string> extra = { "-idealNumThreads", S(per), "-outname", sb + ".m", "-slab_axis", S(best_axis), "-slab_z0", S(best_cuts[k]), "-slab_z1", S(best_cuts[k+1]),
+			"-slab_save", sb + ".afck", "-vertex_offset", S(k*stride), "-face_offset", S(k*stride), "-reuse_guidance", "t", "-reuse_seeds", "t" };
+		pids.push_back(spawn_self(build(extra), (sb + ".log").c_str()));
+		states += (k ? "," : "") + sb + ".afck";
+	}
+	bool ok = true;
+	for (int k=0; k<K; k++) ok = wait_ok(pids[k], ("slab " + S(k)).c_str()) && ok;
+	if (!ok) exit(1);
+	double t1 = 0; { struct timeval tv; gettimeofday(&tv, NULL); t1 = tv.tv_sec + 1e-6*tv.tv_usec; }
+	fprintf(stderr, "[SLABS] slabs done after %.1f s; merging\n", t1 - t0);
+
+	std::string weld = base + ".weld.txt", mb = base + ".merge";
+	unlink(weld.c_str());
+	int totalblocks = nb[0]*nb[1]*nb[2];
+	std::vector<std::string> mextra = { "-idealNumThreads", S(per), "-outname", mb + ".m", "-merge_states", states, "-vertex_offset", S(K*stride), "-face_offset", S(K*stride),
+		"-weld_file", weld, "-max_grab_bag", S(totalblocks + 10), "-reuse_guidance", "t", "-reuse_seeds", "t" };
+	if (!wait_ok(spawn_self(build(mextra), (mb + ".log").c_str()), "merge")) exit(1);
+	double t2 = 0; { struct timeval tv; gettimeofday(&t2 == 0 ? &tv : &tv, NULL); t2 = tv.tv_sec + 1e-6*tv.tv_usec; }
+	fprintf(stderr, "[SLABS] merge done after %.1f s (slabs %.1f s + merge %.1f s)\n", t2 - t0, t1 - t0, t2 - t1);
+
+	// concatenate and weld: lines "keep drop" (0-based ids; the .m files use id+1)
+	std::map<int,int> drop;
+	if (FILE *wf = fopen(weld.c_str(), "r")) { int a, b; while (fscanf(wf, "%d %d", &a, &b) == 2) drop[b+1] = a+1; fclose(wf); }
+	auto root = [&](int v) { for (std::map<int,int>::iterator it = drop.find(v); it != drop.end(); it = drop.find(v)) v = it->second; return v; };
+	FILE *fo = fopen(outname, "w"); if (!fo) { fprintf(stderr, "cannot write %s\n", outname); exit(1); }
+	long long nv = 0, nf = 0;
+	std::vector<std::string> parts; for (int k=0; k<K; k++) parts.push_back(base + ".slab" + S(k) + ".m"); parts.push_back(mb + ".m");
+	char *line = NULL; size_t cap = 0;
+	for (size_t pi=0; pi<parts.size(); pi++) {
+		FILE *fi = fopen(parts[pi].c_str(), "r"); if (!fi) continue;
+		while (getline(&line, &cap, fi) > 0) {
+			if (!strncmp(line, "Vertex", 6)) { int id; if (sscanf(line + 6, "%d", &id) == 1 && drop.count(id)) continue; nv++; fputs(line, fo); }
+			else if (!strncmp(line, "Face", 4)) { int i, a, b, c; if (sscanf(line + 4, "%d %d %d %d", &i, &a, &b, &c) == 4) { fprintf(fo, "Face  %d %d %d %d\n", i, root(a), root(b), root(c)); nf++; } }
+			else fputs(line, fo);
+		}
+		fclose(fi);
+	}
+	free(line); fclose(fo);
+	fprintf(stderr, "[SLABS] wrote %s: %lld vertices, %lld faces, %zu vertices welded\n", outname, nv, nf, drop.size());
+	if (!slab_keep) {
+		for (int k=0; k<K; k++) { std::string sb = base + ".slab" + S(k); unlink((sb + ".m").c_str()); unlink((sb + ".afck").c_str()); }
+		unlink((mb + ".m").c_str()); unlink(weld.c_str());
+	}
+	return bspline ? 3 : 2;
+}
+
 int do_tri_vol(int argc, char* argv[]) {
 	assert(argc>1 && argv[1][0]!='-');
 	real_type isoval = atof(argv[1]) * iso_scale;
@@ -934,6 +1075,9 @@ int do_tri_vol(int argc, char* argv[]) {
 	} else {
 		guidance = new IsoSurfaceGuidanceField(projector, *volume, rho, min_step, max_step, reduction);
 	}
+
+	if (parallel_slabs > 1)
+		return do_tri_slabs(argv[1], bspline);
 
 	controller = new ControllerWrapper(guidance, &projector, GetOutputController());
 
@@ -3326,6 +3470,7 @@ void crash_backtrace_now(const char *msg) {
 }
 
 int main(int argc, char* argv[]) {
+	g_argc = argc; g_argv = argv;
 	{ void *warm[4]; backtrace(warm, 4); }   // load libgcc now: backtrace() may malloc, which deadlocks inside abort()
 	{ struct sigaction sa; memset(&sa, 0, sizeof sa); sa.sa_sigaction = crash_backtrace; sa.sa_flags = SA_SIGINFO;
 	  sigaction(SIGABRT, &sa, NULL); sigaction(SIGSEGV, &sa, NULL); }
@@ -3427,6 +3572,9 @@ int main(int argc, char* argv[]) {
     CL_ADD_VAR(cl,checkpoint_keep,    ": keep only the newest K checkpoints (0 = keep all)");
     CL_ADD_VAR(cl,checkpoint_keep_every, ": with -checkpoint_keep, also keep every M-th switch's checkpoint forever");
     CL_ADD_VAR(cl,slab_axis,          ": parallel slabs: which block coordinate slab_z0/slab_z1 restrict (0=x, 1=y, 2=z; default 2)");
+    CL_ADD_VAR(cl,parallel_slabs,     ": triangulate the volume as K slabs in parallel processes plus one merge run (needs an out-of-core volume); K=1: off");
+    CL_ADD_VAR(cl,parallel_axis,      ": with -parallel_slabs: slab axis (0=x, 1=y, 2=z); -1 (default) picks the axis with the most even split");
+    CL_ADD_VAR(cl,slab_keep,          ": with -parallel_slabs: keep the per-slab meshes, end states and logs (1)");
     CL_ADD_VAR(cl,slab_margin,        ": parallel slabs: width (world units) of the strip left unmeshed on each side of a cut, to be closed by the merge run (default 3)");
     CL_ADD_VAR(cl,slab_z0,            ": parallel slabs: first block layer (z) of this run");
     CL_ADD_VAR(cl,slab_z1,            ": parallel slabs: one past the last block layer of this run (-1 = whole volume)");

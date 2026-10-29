@@ -314,6 +314,7 @@ class OOCVolume : public Volume {
 
     void Gather(const int cell[3], double nbrs[4][4][4]) const;
     real_type GetValue(int x, int y, int z) const;
+    int GetNBlocksAxis(int i) const { return nblocks[i]; }   // 2026 (parallel slabs driver)
     int NumBlocks() const;
     void SetActiveBlock(int b) const;
     int GetActiveBlock() const;
