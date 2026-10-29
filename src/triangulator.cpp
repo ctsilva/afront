@@ -130,6 +130,28 @@ static FILE *trace_file() {
 }
 
 void Triangulator::CreateVertex(const Point3 &p, const Vector3 &n, FrontElement &fe, bool boundary, real_type step) {
+    if (const char *dp = getenv("AFRONT_DEBUG_POINT")) {   // 2026 debugging: dump the front around the first vertex created near a point
+		static bool dumped = false;
+		double x, y, z, r = 1.5;
+		if (!dumped && sscanf(dp, "%lf,%lf,%lf", &x, &y, &z) == 3 && Point3::distance(p, Point3(x,y,z)) < r) {
+			dumped = true;
+			fprintf(stderr, "\n[DEBUGPOINT] vertex %d created at (%g %g %g); front elements within 6:\n", numVertsAdded, (double)p[0], (double)p[1], (double)p[2]);
+			for (size_t fi=0; fi<fronts.size(); fi++) {
+				if (fronts[fi]->empty()) continue;
+				feli first = fronts[fi]->FirstElement(), e = first; int k = 0, n_el = 0;
+				do { n_el++; e = Front::NextElement(e); } while (e != first);
+				e = first;
+				do {
+					feli ne = Front::NextElement(e);
+					if (Point3::distance(e->position, Point3(x,y,z)) < 6)
+						fprintf(stderr, "  front %zu(len %d) el %d vertex %d (%.2f %.2f %.2f) -> (%.2f %.2f %.2f) flags %d prio %08x heappos %d normal (%.2f %.2f %.2f)\n", fi, n_el, k, e->vertindex,
+								(double)e->position[0], (double)e->position[1], (double)e->position[2], (double)ne->position[0], (double)ne->position[1], (double)ne->position[2],
+								e->flags, e->priority.first, e->heap_position, (double)e->normal[0], (double)e->normal[1], (double)e->normal[2]);
+					e = ne; k++;
+				} while (e != first);
+			}
+		}
+    }
     if (FILE *tf = trace_file()) fprintf(tf, "V %d %.17g %.17g %.17g step %.17g\n", numVertsAdded, (double)p[0], (double)p[1], (double)p[2], (double)step);
     if (step > kd_max_step_seen) kd_max_step_seen = step;
 
@@ -2439,11 +2461,23 @@ void Triangulator::Go
 				
 			} else {
 
-				dbgClear();
-				DbgPoints::add(top->position, 1,0,0);
-				DbgPoints::add(Front::NextElement(top)->position, 0,1,0);
-				redrawAndWait('x', true);
-				exit(1);
+				// 2026: used to exit(1) here. A front that even the failsafe cannot close is left as a hole (its vertices are
+				// listed in <outname>.failsafe.txt), so that one bad spot does not lose hours of work.
+				{
+					int len = 1;
+					for (feli e = Front::NextElement(top); e != top; e = Front::NextElement(e)) len++;
+					static int nholes = 0;
+					if (nholes++ < 50)
+						fprintf(stderr, "\n[HOLE] failsafe cannot close a front of %d edges at (%g %g %g): leaving it open (%d so far)\n", len,
+								(double)top->position[0], (double)top->position[1], (double)top->position[2], nholes);
+					failsafe_holes.push_back(vector<int>());
+					Front *front = top->front;
+					while (!front->empty()) {
+						feli f = front->FirstElement();
+						failsafe_holes.back().push_back(f->vertindex);
+						RemoveFrontElement(f);
+					}
+				}
 			}
 
 		} else if (top->priority.first & (PRIORITY_GROW_EDGE | PRIORITY_GROW_SEED_EDGE)) {
