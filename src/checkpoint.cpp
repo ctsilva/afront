@@ -122,7 +122,7 @@ void Triangulator::LoadCheckpointImpl(const char *path, bool merge) {
 	if (!fp) { fprintf(stderr, "checkpoint: cannot read %s\n", path); exit(2); }
 	CkptIn in(fp);
 	in.tag("AFCK"); int ver; in.pod(ver);
-	if (ver != CKPT_VERSION) { fprintf(stderr, "checkpoint: version %d, expected %d\n", ver, CKPT_VERSION); exit(2); }
+	if (ver < 1 || ver > CKPT_VERSION) { fprintf(stderr, "checkpoint: version %d, this build reads versions 1 to %d\n", ver, CKPT_VERSION); exit(2); }
 
 	std::vector<feli> elems;
 	long long nf = in.i64();
@@ -184,7 +184,7 @@ void Triangulator::LoadCheckpointImpl(const char *path, bool merge) {
 		}
 	}
 	int ab; in.pod(ab);
-	{
+	if (ver >= 2) {   // (version 1 checkpoints have no deferred seeds)
 		long long nd = in.i64();
 		for (long long i=0; i<nd; i++) {
 			long long m = in.i64(); std::vector<Point3> l(m);
@@ -192,7 +192,7 @@ void Triangulator::LoadCheckpointImpl(const char *path, bool merge) {
 			if (merge) g_merge_deferred.push_back(l); else deferred_seeds.push_back(l);
 		}
 	}
-	{ std::vector<Point3> z; in.podvec(z); if (merge) g_merge_zone.insert(g_merge_zone.end(), z.begin(), z.end()); else zone_pts = z; }
+	if (ver >= 3) { std::vector<Point3> z; in.podvec(z); if (merge) g_merge_zone.insert(g_merge_zone.end(), z.begin(), z.end()); else zone_pts = z; }
 	if (!merge) { controller.SetActiveBlockIndex(ab); controller.LoadOutputState(fp); }
 	else controller.MergeOutputState(fp);
 	in.tag("END!");
