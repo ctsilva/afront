@@ -926,11 +926,15 @@ void OOCVolume::Gather(const int cell[3], double nbrs[4][4][4]) const {
 // 2026: -slab_z0/-slab_z1 restrict the out-of-core volume to the block layers z in [slab_z0, slab_z1) (parallel slabs):
 // only those blocks are visited (in Z-order among themselves) and counted. slab_z1 < 0 means no restriction.
 int slab_z0 = 0, slab_z1 = -1;
-static inline bool slab_ok(int z) { return slab_z1 < 0 || (z >= slab_z0 && z < slab_z1); }
+int slab_axis = 2;   // -slab_axis: the block coordinate that slab_z0/slab_z1 restrict (0 = x, 1 = y, 2 = z)
+static inline bool slab_ok(int x, int y, int z) { int c = slab_axis == 0 ? x : (slab_axis == 1 ? y : z); return slab_z1 < 0 || (c >= slab_z0 && c < slab_z1); }
 
 int OOCVolume::NumBlocks() const {
-    if (slab_z1 >= 0)
-		return nblocks[0]*nblocks[1]*(std::min(slab_z1, nblocks[2]) - std::max(slab_z0, 0));
+    if (slab_z1 >= 0) {
+		int n[3] = { nblocks[0], nblocks[1], nblocks[2] };
+		n[slab_axis] = std::min(slab_z1, nblocks[slab_axis]) - std::max(slab_z0, 0);
+		return n[0]*n[1]*n[2];
+    }
     return (nblocks[0]*nblocks[1]*nblocks[2]);
 }
 
@@ -940,7 +944,7 @@ static int64 first_slab_zindex(const int nblocks[3]) {
     while (1) {
 		int x,y,z;
 		ZCurve::i2xyz(azi, x,y,z);
-		if (x<nblocks[0] && y<nblocks[1] && z<nblocks[2] && slab_ok(z)) return azi;
+		if (x<nblocks[0] && y<nblocks[1] && z<nblocks[2] && slab_ok(x,y,z)) return azi;
 		azi++;
     }
 }
@@ -970,7 +974,7 @@ void OOCVolume::SetActiveBlock(int b) const {
 			azi++;
 			int x,y,z;
 			ZCurve::i2xyz(azi, x,y,z);
-			if (x<nblocks[0] && y<nblocks[1] && z<nblocks[2] && slab_ok(z))
+			if (x<nblocks[0] && y<nblocks[1] && z<nblocks[2] && slab_ok(x,y,z))
 				break;
 		}
     } 
@@ -1356,7 +1360,7 @@ void* OOCVolume::PrefetchMain() {
 						break;
 					}
 
-					if (x<nblocks[0] && y<nblocks[1] && z<nblocks[2] && slab_ok(z)) {
+					if (x<nblocks[0] && y<nblocks[1] && z<nblocks[2] && slab_ok(x,y,z)) {
 						break;
 					}
 				}
