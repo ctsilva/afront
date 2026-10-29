@@ -78,6 +78,7 @@ class TriangulatorController {
     virtual void SaveOutputState(FILE *f) const { }
     virtual void LoadOutputState(FILE *f) { }
     virtual void MergeOutputState(FILE *f) { }
+    virtual void MarkVertexNoFlip(int id) { }
     virtual int  GetActiveBlockIndex() const { return -1; }
     virtual void SetActiveBlockIndex(int b) { }
 
@@ -128,6 +129,8 @@ class OutputController
     virtual void LoadState(FILE *f) { }
     static void SaveChain(const OutputController *c, FILE *f) { for (; c; c = c->child) c->SaveState(f); }
     static void LoadChain(OutputController *c, FILE *f) { for (; c; c = c->child) c->LoadState(f); }
+    // parallel slabs: the vertex with this id is one of two coincident vertices at a junction; no edge flips around it
+    virtual void MarkNoFlip(int id) { if (child) child->MarkNoFlip(id); }
     // parallel slabs: add another run's saved state to this stage (default: same as loading)
     virtual void MergeState(FILE *f) { LoadState(f); }
     static void MergeChain(OutputController *c, FILE *f) { for (; c; c = c->child) c->MergeState(f); }
@@ -254,6 +257,7 @@ class ControllerWrapper : public TriangulatorController
 	void SaveOutputState(FILE *f) const { OutputController::SaveChain(output_c, f); }
 	void LoadOutputState(FILE *f) { OutputController::LoadChain(output_c, f); }
 	void MergeOutputState(FILE *f) { OutputController::MergeChain(output_c, f); }
+	void MarkVertexNoFlip(int id) { output_c->MarkNoFlip(id); }
 	int  GetActiveBlockIndex() const { return projector ? projector->GetActiveBlockIndex() : -1; }
 	void SetActiveBlockIndex(int b) { if (projector) projector->SetActiveBlockIndex(b); }
 
@@ -313,6 +317,7 @@ class Triangulator {
     void StitchConnectors(const std::vector<int> &state_of);   // parallel slabs: join the boundary pieces of different slab states
     void JoinConnectors(feli c, feli d);
     void CloseConnectorLoop(feli c);
+    void UnifyVertexRings(int keep_slot, int keep_id, int drop_slot, int drop_id);
     void MaybeCheckpoint();
     void KDRebuildFromHeap();
     void KDAudit(const char *where);   // 2026: -kd_audit N: compare the kd-trees with the heap levels
@@ -336,6 +341,7 @@ class Triangulator {
     bool EdgeExistsAlready(feli e1, feli e2) const;
 
     bool GetConnection(feli e1, feli &across);
+    bool NewEdgeExists(feli e1, feli e2, feli across) const;
     real_type CosSmallestRemainingAngle(feli e1, feli e2, feli across);
 
 

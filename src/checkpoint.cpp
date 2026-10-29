@@ -270,10 +270,37 @@ void Triangulator::MaybeCheckpoint() {
 // -weld_file so that the driver can merge the two vertices in the final mesh.
 extern char *weld_file;
 
+// The junction point of a join exists as two vertices (c's from one slab, q0's from the other; the driver welds them in the
+// output). Make the algorithm see them as one: the kept vertex inherits the neighbors of the dropped one, and the neighbors that
+// are still on a front are told that their neighbor "drop_id" is now "keep_id". Without this EdgeExistsAlready cannot see the
+// edges of the other slab's fan around the junction, and an ear cut can put a second triangle on an existing edge.
+static std::unordered_map<int,int> g_id2slot;   // vertex id -> vertinfo slot, for the vertices on fronts
+
+void Triangulator::UnifyVertexRings(int keep_slot, int keep_id, int drop_slot, int drop_id) {
+	std::vector<int> dr = vertinfo[drop_slot].ring;
+	std::vector<int> &kr = vertinfo[keep_slot].ring;
+	for (size_t i=0; i<dr.size(); i++) {
+		int n = dr[i];
+		if (n == keep_id || n == drop_id) continue;
+		if (std::find(kr.begin(), kr.end(), n) == kr.end()) kr.push_back(n);
+		std::unordered_map<int,int>::iterator it = g_id2slot.find(n);
+		if (it != g_id2slot.end()) {
+			std::vector<int> &nr = vertinfo[it->second].ring;
+			for (size_t j=0; j<nr.size(); j++) if (nr[j] == drop_id) nr[j] = keep_id;
+		}
+	}
+	// the dropped vertex may also appear in rings it does not list itself
+	g_id2slot.erase(drop_id);
+}
+
 void Triangulator::JoinConnectors(feli c, feli d) {
 	feli a = Front::NextElement(c), q0 = Front::NextElement(d), q1 = Front::NextElement(q0);
 	Front *fa = c->front, *fb = d->front;
 	int c_vert = c->vertindex, q0_vert = q0->vertindex;
+	controller.MarkVertexNoFlip(c_vert);    // before anything is finalized: no edge flips around the two coincident vertices
+	controller.MarkVertexNoFlip(q0_vert);
+
+	UnifyVertexRings(c->vertindex_l, c->vertindex, q0->vertindex_l, q0->vertindex);
 
 	KDRemove(c);
 	KDRemove(d);
@@ -315,6 +342,9 @@ void Triangulator::JoinConnectors(feli c, feli d) {
 void Triangulator::CloseConnectorLoop(feli c) {
 	feli a = Front::NextElement(c), u = Front::PrevElement(c);
 	int c_vert = c->vertindex, a_vert = a->vertindex;
+	controller.MarkVertexNoFlip(a_vert);
+	controller.MarkVertexNoFlip(c_vert);
+	UnifyVertexRings(a->vertindex_l, a->vertindex, c->vertindex_l, c->vertindex);
 	KDRemove(u);
 	RemoveFrontElement(c);      // also forgets c in boundary_connectors (no blocks left)
 	KDInsert(u);
@@ -328,6 +358,12 @@ void Triangulator::CloseConnectorLoop(feli c) {
 }
 
 void Triangulator::StitchConnectors(const std::vector<int> &state_of_in) {
+	g_id2slot.clear();
+	for (size_t fi=0; fi<fronts.size(); fi++) {
+		if (fronts[fi]->empty()) continue;
+		feli first = fronts[fi]->FirstElement(), e = first;
+		do { g_id2slot[e->vertindex] = e->vertindex_l; e = Front::NextElement(e); } while (e != first);
+	}
 	std::vector<int> state_of = state_of_in;
 	if (getenv("AFRONT_DEBUG_STITCH"))
 		for (size_t i=0; i<boundary_connectors.size(); i++) {

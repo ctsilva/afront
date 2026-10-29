@@ -75,6 +75,7 @@ public:
     void SaveState(FILE *f) const;
     void LoadState(FILE *f);
     void MergeState(FILE *f);
+    void MarkNoFlip(int id) { noflip.insert(id); if (child) child->MarkNoFlip(id); }
     void CheckConsistency(const char *where) const;   // debugging: incident sets vs. triangles
 
 protected:
@@ -85,6 +86,7 @@ protected:
 
     std::map<int,int> global_to_local_vi;
 
+    std::set<int> noflip;   // ids of junction vertices (parallel slabs): edges around them are never flipped
     vector<int> available_verts;
     vector<int> available_tris;
     int AllocVert();

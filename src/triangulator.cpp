@@ -178,6 +178,37 @@ void Triangulator::CreateTriangle(int v1, int v2, int v3) {
 }
 
 void Triangulator::CreateTriangle(const feli v1, const feli v2, const feli v3, bool forreal) {
+    if (forreal) if (const char *dp = getenv("AFRONT_DEBUG_TRIPOINT")) {   // 2026 debugging (merge runs): dump the fronts around triangles that touch a point
+		extern char *merge_states;
+		static int ndump = 0; const int maxdump = 40;
+		double x, y, z;
+		if (merge_states && ndump < maxdump && sscanf(dp, "%lf,%lf,%lf", &x, &y, &z) == 3) {
+			Point3 P(x,y,z);
+			feli vs[3] = { v1, v2, v3 };
+			bool touch = false;
+			for (int k=0; k<3; k++) if (Point3::distance(vs[k]->position, P) < 0.02) touch = true;
+			if (touch) {
+				ndump++;
+				fprintf(stderr, "\n[TRIDUMP] triangle %d: ", numFacesAdded);
+				for (int k=0; k<3; k++) fprintf(stderr, "v%d (%.2f %.2f %.2f) ", vs[k]->vertindex, (double)vs[k]->position[0], (double)vs[k]->position[1], (double)vs[k]->position[2]);
+				fprintf(stderr, "flags %d/%d/%d prio %08x/%08x/%08x\n", v1->flags, v2->flags, v3->flags, v1->priority.first, v2->priority.first, v3->priority.first);
+				for (size_t fi=0; fi<fronts.size(); fi++) {
+					if (fronts[fi]->empty()) continue;
+					feli first = fronts[fi]->FirstElement(), e = first; int k = 0, n_el = 0;
+					do { n_el++; e = Front::NextElement(e); } while (e != first);
+					bool any = false; e = first;
+					do { if (Point3::distance(e->position, P) < 3.0) any = true; e = Front::NextElement(e); } while (e != first);
+					if (!any) continue;
+					e = first;
+					do {
+						feli ne = Front::NextElement(e);
+						fprintf(stderr, "    front %zu(len %d) el %d v%d (%.2f %.2f %.2f) -> v%d flags %d prio %08x\n", fi, n_el, k, e->vertindex, (double)e->position[0], (double)e->position[1], (double)e->position[2], ne->vertindex, e->flags, e->priority.first);
+						e = ne; k++;
+					} while (e != first);
+				}
+			}
+		}
+    }
     if (forreal)
 		CreateTriangle(v1->vertindex, v2->vertindex, v3->vertindex);
 }
@@ -1253,6 +1284,15 @@ real_type Triangulator::CosSmallestRemainingAngle(feli e1, feli e2, feli across)
 }
 
 
+// 2026: the new edges of the triangle (e1, e2, across) -- across-e2 and e1-across, unless one of them is an existing front edge
+// (an ear) -- must not exist yet, or the triangle would be a second one on an existing edge (non-manifold). The vertex rings know
+// the edges created so far; after a join across slabs they also know those of the other slab (UnifyVertexRings).
+bool Triangulator::NewEdgeExists(feli e1, feli e2, feli across) const {
+	if (across != Front::NextElement(e2) && EdgeExistsAlready(e2, across)) return true;
+	if (across != Front::PrevElement(e1) && EdgeExistsAlready(across, e1)) return true;
+	return false;
+}
+
 bool Triangulator::GetConnection(feli e1, feli &across) {
     feli e2 = Front::NextElement(e1);
 
@@ -1293,12 +1333,12 @@ bool Triangulator::GetConnection(feli e1, feli &across) {
 			continue;
 
 		bool isclose;
-		if (TriangleLegal(e1, e2, &across, across->position, across->normal, NULL, &isclose)) {
+		if (!NewEdgeExists(e1, e2, across) && TriangleLegal(e1, e2, &across, across->position, across->normal, NULL, &isclose)) {
 
 			feli pf[3] = { Front::PrevElement(across), across, Front::NextElement(across) };
-			bool tl[3] = { TriangleLegal(e1, e2, &pf[0], pf[0]->position, pf[0]->normal, NULL, NULL),
+			bool tl[3] = { !NewEdgeExists(e1, e2, pf[0]) && TriangleLegal(e1, e2, &pf[0], pf[0]->position, pf[0]->normal, NULL, NULL),
 						   true,
-						   TriangleLegal(e1, e2, &pf[2], pf[2]->position, pf[2]->normal, NULL, NULL) };
+						   !NewEdgeExists(e1, e2, pf[2]) && TriangleLegal(e1, e2, &pf[2], pf[2]->position, pf[2]->normal, NULL, NULL) };
 
 			real_type mincangle[3] = { tl[0] ? CosSmallestRemainingAngle(e1, e2, pf[0]) : 10,
 									   CosSmallestRemainingAngle(e1, e2, pf[1]),

@@ -268,6 +268,8 @@ bool OutputControllerEdgeFlipper::TryFlip(int v1, int v2) {
 	return false;
     }
 
+    if (!noflip.empty() && (noflip.count(verts[v1].index) || noflip.count(verts[v2].index) || noflip.count(verts[o1].index) || noflip.count(verts[o2].index)))
+	return false;   // 2026: junction vertices of parallel slabs
 
     int nbound=0;
     if (verts[v1].boundary) nbound++;
