@@ -1204,17 +1204,27 @@ void Triangulator::KDRemove(feli e) {
 void Triangulator::KDUpdate(feli e) {
 	int level = heap_level(e);
 	
+	// 2026: removals are checked like in KDRemove; an unchecked miss left a stale entry that dangled once the element was freed
+	// (SIGSEGV in OrderedTraverse::next at switches 8854, 13084, 22203 of the full RM run)
 	if (level==0 && e->heap_position<0) {
 		// new level is 0 (local), but old level is 1 (global)
-		kdtree_g.Remove(*this, e);
+		if (!kdtree_g.Remove(*this, e))
+			KDUpdateMiss(e, kdtree_g.Remove(*this, e, true) || kdtree_l.Remove(*this, e, true));
 		kdtree_l.Insert(*this, e);
 		kdg_edits++;
 	} else if (level==1 && e->heap_position>=0) {
 		// new level is 1 (global), but old level is 0 (local)
-		kdtree_l.Remove(*this, e);
+		if (!kdtree_l.Remove(*this, e))
+			KDUpdateMiss(e, kdtree_l.Remove(*this, e, true) || kdtree_g.Remove(*this, e, true));
 		kdtree_g.Insert(*this, e);
 		kdg_edits++;
 	}
+}
+
+
+void Triangulator::KDUpdateMiss(feli e, bool found) {
+	static int nmiss = 0;
+	if (nmiss++ < 20) fprintf(stderr, "[KDMISS] KDUpdate did not find element %p by box (heap_position=%d); forced search %s\n", (void*)&*e, e->heap_position, found ? "found it" : "FAILED");
 }
 
 

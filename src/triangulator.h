@@ -455,6 +455,7 @@ class Triangulator {
 	real_type KDNextOT(feli &next);
 	void KDEndOT();
 	void KDUpdate(feli e);
+	void KDUpdateMiss(feli e, bool found);
 	
 	feli next_l, next_g;
 	real_type dnext_l, dnext_g;
