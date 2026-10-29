@@ -1320,6 +1320,32 @@ void Triangulator::ConnectTriangle(feli e1, feli across, bool dofailsafe)
 
     feli e2 = Front::NextElement(e1);
 
+    {   // 2026: a triangle that cuts an ear or closes a front consumes the ear's edges; if one of them is a connector (the
+		// pseudo-edge that stands for a part of a boundary curve in a block that has not been processed yet) the front
+		// must wait for that block: park e1 (gate it like an element outside the working block). When the blocks are
+		// exhausted the connector can be consumed (a warning is printed).
+		bool e1e = (Front::PrevElement(e1) == across), e2e = (Front::NextElement(e2) == across);
+		bool consumes = (e1e && (across->flags & FRONT_FLAG_CONNECTOR)) || (e2e && (e2->flags & FRONT_FLAG_CONNECTOR));
+		if (consumes) {
+			if (haveWorkingBlock) {
+				static int nparked = 0;
+				if (nparked++ < 20)
+					fprintf(stderr, "\n[CONNECTOR] parking an element at (%g %g %g): connecting it would consume a connector edge (%d so far)\n",
+							(double)e1->position[0], (double)e1->position[1], (double)e1->position[2], nparked);
+				e1->priority.first &= ~PRIORITY_FAILSAFE_ANY;
+				e1->priority.first |= PRIORITY_OWB;
+				KDUpdate(e1);
+				heap.update_position(e1->heap_position);
+				return;
+			} else {
+				static int nconsumed = 0;
+				if (nconsumed++ < 20)
+					fprintf(stderr, "\n[CONNECTOR] no blocks left: consuming a connector edge at (%g %g %g) (%d so far)\n",
+							(double)e1->position[0], (double)e1->position[1], (double)e1->position[2], nconsumed);
+			}
+		}
+    }
+
     if (across==e1 || across==e2) {
 		cerr<<"connecting degenerate triangle!! something is wacked out!"<<endl;
 		exit(-1);
@@ -1446,7 +1472,7 @@ void Triangulator::ConnectTriangle(feli e1, feli across, bool dofailsafe)
 			std::swap(e1,e2);
 		}
 
-		if ((e1->flags & FRONT_FLAG_CONNECTOR) || (across->flags & FRONT_FLAG_CONNECTOR)) {
+		if (haveWorkingBlock && ((e1->flags & FRONT_FLAG_CONNECTOR) || (across->flags & FRONT_FLAG_CONNECTOR))) {
 			cerr<<"ear cutting connector edge!"<<endl;
 			extern void crash_backtrace_now(const char*); crash_backtrace_now("ear cutting connector edge!");
 		exit(1);
@@ -1632,15 +1658,22 @@ void Triangulator::SetupInitialFronts(const vector< vector<Point3> > &ipts, cons
 void Triangulator::RemoveFrontElement(feli e) {
     Front *f = e->front;
 
-    if (e->flags & FRONT_FLAG_CONNECTOR) {
-		cerr<<"removing front connector"<<endl;
-		extern void crash_backtrace_now(const char*); crash_backtrace_now("removing front connector");
-		exit(1);
+    bool is_connector = (e->flags & FRONT_FLAG_CONNECTOR) != 0;
+    if (is_connector) {
+		if (haveWorkingBlock) {
+			cerr<<"removing front connector"<<endl;
+			extern void crash_backtrace_now(const char*); crash_backtrace_now("removing front connector");
+			exit(1);
+		}
+		// 2026: no blocks are left to replace this connector: forget it
+		for (unsigned i=0; i<boundary_connectors.size(); i++)
+			if (boundary_connectors[i] == e) { boundary_connectors.erase(boundary_connectors.begin()+i); break; }
     }
 
     VertexRefDecrement(*e);
 
-    WaitForProjection(e);
+    if (!is_connector)   // connectors are never projected
+		WaitForProjection(e);
     {   // the previous edge's work item reads e as its second endpoint
 		feli pe = Front::PrevElement(e);
 		if (pe != e && pe->proj_res.pending > 0) {
