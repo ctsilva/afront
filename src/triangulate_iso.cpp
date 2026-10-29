@@ -761,6 +761,7 @@ void OOCVolume::BlockString(const int b[3], char string[1024]) const {
 }
 
 
+static int64 first_slab_zindex(const int nblocks[3]);   // (parallel slabs, defined below)
 bool OOCVolume::Read(const char *fname) {
 
     gtb::afree<FILE*> f(fopen(fname, "rb"), fclose);
@@ -857,7 +858,8 @@ bool OOCVolume::Read(const char *fname) {
     active_block[0] = 0;
     active_block[1] = 0;
     active_block[2] = 0;
-    active_zindex=0;
+    active_zindex=first_slab_zindex(nblocks);
+    ZCurve::i2xyz(active_zindex, active_block[0], active_block[1], active_block[2]);
     prefetcher = new thlib::Thread(&PrefetchMain_s, (void*)this, 0);
     SetActiveBlock(-1);
     return true;
@@ -921,8 +923,26 @@ void OOCVolume::Gather(const int cell[3], double nbrs[4][4][4]) const {
 
 
 
+// 2026: -slab_z0/-slab_z1 restrict the out-of-core volume to the block layers z in [slab_z0, slab_z1) (parallel slabs):
+// only those blocks are visited (in Z-order among themselves) and counted. slab_z1 < 0 means no restriction.
+int slab_z0 = 0, slab_z1 = -1;
+static inline bool slab_ok(int z) { return slab_z1 < 0 || (z >= slab_z0 && z < slab_z1); }
+
 int OOCVolume::NumBlocks() const {
+    if (slab_z1 >= 0)
+		return nblocks[0]*nblocks[1]*(std::min(slab_z1, nblocks[2]) - std::max(slab_z0, 0));
     return (nblocks[0]*nblocks[1]*nblocks[2]);
+}
+
+// Z-index of the first block that is visited
+static int64 first_slab_zindex(const int nblocks[3]) {
+    int64 azi = 0;
+    while (1) {
+		int x,y,z;
+		ZCurve::i2xyz(azi, x,y,z);
+		if (x<nblocks[0] && y<nblocks[1] && z<nblocks[2] && slab_ok(z)) return azi;
+		azi++;
+    }
 }
 
 void OOCVolume::SetActiveBlock(int b) const {
@@ -938,7 +958,7 @@ void OOCVolume::SetActiveBlock(int b) const {
     if (to_increment < 0) {
 		to_increment = b;
 		active_index = 0;
-		active_zindex = 0;
+		active_zindex = first_slab_zindex(nblocks);
     }
 
     int64 ai = active_index;
@@ -950,7 +970,7 @@ void OOCVolume::SetActiveBlock(int b) const {
 			azi++;
 			int x,y,z;
 			ZCurve::i2xyz(azi, x,y,z);
-			if (x<nblocks[0] && y<nblocks[1] && z<nblocks[2])
+			if (x<nblocks[0] && y<nblocks[1] && z<nblocks[2] && slab_ok(z))
 				break;
 		}
     } 
@@ -1336,7 +1356,7 @@ void* OOCVolume::PrefetchMain() {
 						break;
 					}
 
-					if (x<nblocks[0] && y<nblocks[1] && z<nblocks[2]) {
+					if (x<nblocks[0] && y<nblocks[1] && z<nblocks[2] && slab_ok(z)) {
 						break;
 					}
 				}

@@ -1738,6 +1738,10 @@ bool Triangulator::InWorkingArea(feli e1, feli e2) {
 
 
 void Triangulator::InsertBoundary(vector<Point3> &pts, vector<Vector3> &norms, bool isloop) {
+    if (getenv("AFRONT_DEBUG_BND")) {
+		fprintf(stderr, "\n[BND] %s with %zu points: first (%g %g %g) last (%g %g %g), %zu connectors waiting\n", isloop ? "loop" : "segment", pts.size(),
+				(double)pts.front()[0], (double)pts.front()[1], (double)pts.front()[2], (double)pts.back()[0], (double)pts.back()[1], (double)pts.back()[2], boundary_connectors.size());
+    }
 
     vector< vector<Vector3> > nnorms;
     nnorms.push_back(norms);
@@ -1921,6 +1925,7 @@ void Triangulator::InsertBoundary(vector<Point3> &pts, vector<Vector3> &norms, b
 double sw_t_loop = 0, sw_t_bnd = 0, sw_t_area = 0, sw_t_rebuild_l = 0, sw_t_seeds = 0, sw_t_rebuild_g = 0;
 long long sw_n_scanned = 0;
 bool kdg_always_rebuild = false;
+bool slab_finished = false;   // parallel slabs: this run's blocks are done and its end state has been saved
 bool ckpt_ready = false;   // true once Go() has entered its main loop (see MaybeCheckpoint)
 int sw_nswitch = 0;   // block switches so far (checkpoints are numbered by it)
 bool block_scan_always = false, block_query_verify = false;
@@ -1964,6 +1969,14 @@ void Triangulator::UpdateWorkingBlock(bool first) {
 		haveWorkingBlock = controller.GetNextBlock(workingBlock, new_pts, new_norms, new_loops, new_seeds);
     }
     ContinueProjections();
+    extern char *slab_save;
+    if (!first && !haveWorkingBlock && slab_save) {
+		// parallel slabs: the last block is done. Stop here (the front elements that wait for blocks outside this slab are
+		// still gated) and save the state; the merge run closes the seams.
+		slab_finished = true;
+		SaveCheckpoint(slab_save);
+		return;
+    }
     {   // 2026: time between block switches = triangulation of the previous block
 		static double prev_end = 0, tot_switch = 0, tot_tri = 0; extern int sw_nswitch; int &nswitch = sw_nswitch;
 		double now = get_time_seconds();
@@ -2240,11 +2253,16 @@ void Triangulator::Go
 
     cerr<<"starting workers"<<endl;
     StartWorkerThreads();
-    extern char *resume_from;
+    extern char *resume_from, *merge_states;
+    extern int vertex_offset, face_offset;
     if (resume_from) {
 		// 2026: continue from a checkpoint (checkpoint.cpp) instead of setting up the first block
 		LoadCheckpoint(resume_from);
+    } else if (merge_states) {
+		// 2026: parallel slabs, phase 2: start from the end states of the slab runs
+		MergeCheckpoints(merge_states);
     } else {
+    if (vertex_offset || face_offset) SetOutputIndices(vertex_offset, face_offset);   // parallel slabs, phase 1: disjoint id ranges
     cerr<<"setting up initial fronts"<<endl;
     SetupInitialFronts(ipts, inorms);
     cerr<<"setting working area"<<endl;
@@ -2258,6 +2276,7 @@ void Triangulator::Go
     }
 	if (!fronts.size()) {
 		cerr<<"no initial fronts could be created - nothing to triangulate"<<endl;
+		StopWorkerThreads();
 		return;
 	}
 	//	return;
@@ -2275,6 +2294,7 @@ void Triangulator::Go
 
     ckpt_ready = true;   // checkpoints only from here on: the setup above is not replayed when resuming
     while (true) {
+		if (slab_finished) break;
 		if (heap.empty()) {
 			// stop if we have no more working blocks
 			if (!haveWorkingBlock)
@@ -2499,6 +2519,11 @@ void Triangulator::Go
 		}
     }
 
+    if (slab_finished) {
+		StopWorkerThreads();
+		fprintf(stderr, "\n[SLAB] done: %d verts, %d faces so far, end state saved\n", numVertsAdded, numFacesAdded);
+		return;
+    }
     controller.Finish();
 
     if (failsafe_holes.size() != 0) {

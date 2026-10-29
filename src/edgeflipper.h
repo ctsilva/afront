@@ -74,6 +74,7 @@ public:
     // 2026: checkpoint support
     void SaveState(FILE *f) const;
     void LoadState(FILE *f);
+    void MergeState(FILE *f);
 
 protected:
 

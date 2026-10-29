@@ -103,7 +103,14 @@ void Triangulator::SaveCheckpoint(const char *path) {
 	ContinueProjections();
 }
 
-void Triangulator::LoadCheckpoint(const char *path) {
+extern int vertex_offset, face_offset;
+static std::vector<Triangulator::feli> g_merge_elems;      // parallel slabs: elements collected from all merged states
+static std::vector<Triangulator::feli> g_merge_unprojected;
+
+// merge=false: restore the state of a checkpoint into a fresh Triangulator.
+// merge=true (parallel slabs, phase 2): append the end state of another slab run; the working-block gate is switched off
+// (PRIORITY_OWB cleared) as when the blocks run out, the heap is filled by MergeCheckpoints.
+void Triangulator::LoadCheckpointImpl(const char *path, bool merge) {
 	FILE *fp = fopen(path, "rb");
 	if (!fp) { fprintf(stderr, "checkpoint: cannot read %s\n", path); exit(2); }
 	CkptIn in(fp);
@@ -119,7 +126,9 @@ void Triangulator::LoadCheckpoint(const char *path) {
 		for (long long k=0; k<n; k++) {
 			FrontElement e;
 			in.pod(e.position); in.pod(e.normal); in.pod(e.vertindex); in.pod(e.vertindex_l);
-			unsigned int pf; real_type ps; in.pod(pf); in.pod(ps); e.priority = FrontElement::priority_type(pf, ps);
+			unsigned int pf; real_type ps; in.pod(pf); in.pod(ps);
+			if (merge && !(pf & PRIORITY_FAILSAFE_ANY)) pf &= ~PRIORITY_OWB;
+			e.priority = FrontElement::priority_type(pf, ps);
 			in.pod(e.max_step); in.pod(e.flags);
 			in.pod(e.proj_res.position); in.pod(e.proj_res.normal); in.pod(e.proj_res.step);
 			int res; in.pod(res); e.proj_res.result = res; e.proj_res.pending = 0;
@@ -131,28 +140,55 @@ void Triangulator::LoadCheckpoint(const char *path) {
 		long long n = in.i64();
 		std::vector<feli> h(n);
 		for (long long i=0; i<n; i++) { int x; in.pod(x); h[i] = elems.at(x); }
-		heap.restore(level, h);
+		if (!merge) heap.restore(level, h);
 	}
 	{
 		long long n = in.i64();
-		boundary_connectors.resize(n);
-		for (long long i=0; i<n; i++) { int x; in.pod(x); boundary_connectors[i] = elems.at(x); }
+		size_t base = boundary_connectors.size();
+		if (!merge) boundary_connectors.clear();
+		boundary_connectors.resize(merge ? base + n : n);
+		for (long long i=0; i<n; i++) { int x; in.pod(x); boundary_connectors[(merge ? base : 0) + i] = elems.at(x); }
 	}
 	{
 		long long n = in.i64();
-		vertinfo.resize(n);
-		for (long long i=0; i<n; i++) { in.pod(vertinfo[i].front_refcount); in.pod(vertinfo[i].vertindex); in.podvec(vertinfo[i].ring); }
-		in.podvec(available_vertinfo);
-		in.pod(max_active_verts);
+		int vbase = merge ? (int)vertinfo.size() : 0;
+		vertinfo.resize(vbase + n);
+		for (long long i=0; i<n; i++) { in.pod(vertinfo[vbase+i].front_refcount); in.pod(vertinfo[vbase+i].vertindex); in.podvec(vertinfo[vbase+i].ring); }
+		std::vector<int> av; in.podvec(av);
+		if (!merge) available_vertinfo = av;
+		else for (size_t i=0; i<av.size(); i++) available_vertinfo.push_back(av[i] + vbase);
+		int mav; in.pod(mav);
+		max_active_verts = merge ? std::max(max_active_verts, mav) : mav;
+		if (merge) for (size_t i=0; i<elems.size(); i++) elems[i]->vertindex_l += vbase;
 	}
-	in.pod(numVertsAdded); in.pod(numFacesAdded); in.pod(flipOutput);
-	in.pod(haveWorkingBlock); in.pod(workingBlock); in.pod(workingAreaRadius); in.pod(workingAreaCenter);
-	in.pod(kd_max_step_seen); in.pod(kdg_edits); in.pod(kdg_size_at_rebuild); in.pod(sw_nswitch);
+	{
+		int nv, nfc; bool fo, hwb; Box3 wb; real_type war; Point3 wac; real_type kms; long long ke, ks; int nsw;
+		in.pod(nv); in.pod(nfc); in.pod(fo);
+		in.pod(hwb); in.pod(wb); in.pod(war); in.pod(wac);
+		in.pod(kms); in.pod(ke); in.pod(ks); in.pod(nsw);
+		if (!merge) {
+			numVertsAdded = nv; numFacesAdded = nfc; flipOutput = fo;
+			haveWorkingBlock = hwb; workingBlock = wb; workingAreaRadius = war; workingAreaCenter = wac;
+			kd_max_step_seen = kms; kdg_edits = ke; kdg_size_at_rebuild = ks; sw_nswitch = nsw;
+		} else {
+			flipOutput = fo;
+			kd_max_step_seen = std::max(kd_max_step_seen, kms);
+		}
+	}
 	int ab; in.pod(ab);
-	controller.SetActiveBlockIndex(ab);
-	controller.LoadOutputState(fp);
+	if (!merge) { controller.SetActiveBlockIndex(ab); controller.LoadOutputState(fp); }
+	else controller.MergeOutputState(fp);
 	in.tag("END!");
 	fclose(fp);
+
+	if (merge) {
+		for (size_t i=0; i<elems.size(); i++) {
+			g_merge_elems.push_back(elems[i]);
+			if (!(elems[i]->flags & FRONT_FLAG_CONNECTOR) && elems[i]->proj_res.result == PROJECT_INCOMPLETE) g_merge_unprojected.push_back(elems[i]);
+		}
+		fprintf(stderr, "\n[CHECKPOINT] merged %s: %zu front elements, %lld fronts\n", path, elems.size(), nf);
+		return;
+	}
 
 	KDRebuildFromHeap();
 
@@ -164,6 +200,30 @@ void Triangulator::LoadCheckpoint(const char *path) {
 	if (const char *rs = getenv("AFRONT_CKPT_RESAVE")) SaveCheckpoint(rs);   // debugging: save/load round-trip test
 	fprintf(stderr, "\n[CHECKPOINT] resumed from %s: switch %d, %zu front elements in %zu fronts, %d verts %d faces, active block %d, %lld projections re-requested\n",
 			path, sw_nswitch, elems.size(), fronts.size(), numVertsAdded, numFacesAdded, ab, nreq);
+}
+
+void Triangulator::LoadCheckpoint(const char *path) { LoadCheckpointImpl(path, false); }
+
+// Parallel slabs, phase 2: merge the end states of the slab runs and continue without the working-block gate.
+void Triangulator::MergeCheckpoints(const char *list) {
+	std::string all(list);
+	size_t pos = 0;
+	while (pos <= all.size()) {
+		size_t c = all.find(',', pos);
+		std::string one = all.substr(pos, c == std::string::npos ? std::string::npos : c - pos);
+		if (!one.empty()) LoadCheckpointImpl(one.c_str(), true);
+		if (c == std::string::npos) break;
+		pos = c + 1;
+	}
+	numVertsAdded = vertex_offset; numFacesAdded = face_offset;
+	haveWorkingBlock = false;
+	for (size_t i=0; i<g_merge_elems.size(); i++) heap.push(g_merge_elems[i]);
+	workingAreaRadius = INFINITY;
+	workingAreaCenter = g_merge_elems.empty() ? Point3(0,0,0) : g_merge_elems[0]->position;
+	KDRebuildFromHeap();
+	for (size_t i=0; i<g_merge_unprojected.size(); i++) RequestProjection(g_merge_unprojected[i]);
+	fprintf(stderr, "\n[CHECKPOINT] merged %zu front elements (%zu fronts); new vertices start at %d, faces at %d\n",
+			g_merge_elems.size(), fronts.size(), vertex_offset, face_offset);
 }
 
 // called at the end of UpdateWorkingBlock

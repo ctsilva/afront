@@ -30,6 +30,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
 #include "triangulator.h"
 #include <fstream>
 #include <string>
+#include "ckpt_io.h"
 
 class OutputControllerHHM : public OutputController
 {
@@ -49,6 +50,7 @@ public:
 	// 2026: checkpoint support: remember the file size, cut the file back to it on restore
 	void SaveState(FILE *f) const;
 	void LoadState(FILE *f);
+	void MergeState(FILE *f) { CkptIn in(f); in.tag("HHM "); in.i64(); }   // the merged run writes its own file
 
 protected:
     std::ofstream *fout;

@@ -77,6 +77,7 @@ class TriangulatorController {
     // 2026: checkpoint support: output stages' state and the active volume block (-1: not supported)
     virtual void SaveOutputState(FILE *f) const { }
     virtual void LoadOutputState(FILE *f) { }
+    virtual void MergeOutputState(FILE *f) { }
     virtual int  GetActiveBlockIndex() const { return -1; }
     virtual void SetActiveBlockIndex(int b) { }
 
@@ -127,6 +128,9 @@ class OutputController
     virtual void LoadState(FILE *f) { }
     static void SaveChain(const OutputController *c, FILE *f) { for (; c; c = c->child) c->SaveState(f); }
     static void LoadChain(OutputController *c, FILE *f) { for (; c; c = c->child) c->LoadState(f); }
+    // parallel slabs: add another run's saved state to this stage (default: same as loading)
+    virtual void MergeState(FILE *f) { LoadState(f); }
+    static void MergeChain(OutputController *c, FILE *f) { for (; c; c = c->child) c->MergeState(f); }
 };
 
 
@@ -249,6 +253,7 @@ class ControllerWrapper : public TriangulatorController
 
 	void SaveOutputState(FILE *f) const { OutputController::SaveChain(output_c, f); }
 	void LoadOutputState(FILE *f) { OutputController::LoadChain(output_c, f); }
+	void MergeOutputState(FILE *f) { OutputController::MergeChain(output_c, f); }
 	int  GetActiveBlockIndex() const { return projector ? projector->GetActiveBlockIndex() : -1; }
 	void SetActiveBlockIndex(int b) { if (projector) projector->SetActiveBlockIndex(b); }
 
@@ -303,6 +308,8 @@ class Triangulator {
     real_type distance(const feli &i, const Point3 &from) const;
     void SaveCheckpoint(const char *path);   // 2026: checkpoint/restart (checkpoint.cpp)
     void LoadCheckpoint(const char *path);
+    void LoadCheckpointImpl(const char *path, bool merge);
+    void MergeCheckpoints(const char *comma_separated_paths);   // parallel slabs, phase 2
     void MaybeCheckpoint();
     void KDRebuildFromHeap();
     void KDAudit(const char *where);   // 2026: -kd_audit N: compare the kd-trees with the heap levels

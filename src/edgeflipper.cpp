@@ -668,3 +668,34 @@ void OutputControllerEdgeFlipper::LoadState(FILE *fp) {
 	in.podvec(available_verts);
 	in.podvec(available_tris);
 }
+
+// parallel slabs: append another run's flipper state (vertex ids are disjoint between slabs, local indices are shifted)
+void OutputControllerEdgeFlipper::MergeState(FILE *fp) {
+	CkptIn in(fp);
+	in.tag("EFLP");
+	int vbase = verts.size(), tbase = tris.size();
+	long long n = in.i64();
+	for (long long i=0; i<n; i++) {
+		EdgeFlipperVertex v;
+		in.pod(v.boundary); in.pod(v.onfront); in.pod(v.index); in.pod(v.position); in.pod(v.normal);
+		in.ints(v.incidentTriangles); in.ints(v.incidentVerticesLocal); in.ints(v.incidentVerticesGlobal);
+		std::set<int> t, l;
+		for (std::set<int>::iterator j=v.incidentTriangles.begin(); j!=v.incidentTriangles.end(); ++j) t.insert(*j + tbase);
+		for (std::set<int>::iterator j=v.incidentVerticesLocal.begin(); j!=v.incidentVerticesLocal.end(); ++j) l.insert(*j + vbase);
+		v.incidentTriangles = t; v.incidentVerticesLocal = l;
+		verts.push_back(v);
+	}
+	n = in.i64();
+	for (long long i=0; i<n; i++) {
+		EdgeFlipperTriangle t;
+		in.get(t.vi, sizeof t.vi); in.pod(t.index);
+		for (int k=0; k<3; k++) t.vi[k] += vbase;
+		tris.push_back(t);
+	}
+	n = in.i64();
+	for (long long i=0; i<n; i++) { int a, b; in.pod(a); in.pod(b); global_to_local_vi[a] = b + vbase; }
+	std::vector<int> av, at;
+	in.podvec(av); in.podvec(at);
+	for (size_t i=0; i<av.size(); i++) available_verts.push_back(av[i] + vbase);
+	for (size_t i=0; i<at.size(); i++) available_tris.push_back(at[i] + tbase);
+}
