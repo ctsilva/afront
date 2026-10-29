@@ -930,11 +930,14 @@ int slab_axis = 2;   // -slab_axis: the block coordinate that slab_z0/slab_z1 re
 static inline bool slab_ok(int x, int y, int z) { int c = slab_axis == 0 ? x : (slab_axis == 1 ? y : z); return slab_z1 < 0 || (c >= slab_z0 && c < slab_z1); }
 double slab_margin = 3.0;   // -slab_margin: world-unit strip left unmeshed on each side of a cut between slabs (see PLAN.md)
 // shrink the working box of a block that touches a cut, so that the meshes of the two slabs do not overlap there
+bool slab_box_shrunk = false;   // the current working box was shrunk at a cut (the seed code skips seeds in the strip)
 static void slab_shrink_box(Box3 &box, const int active_block[3], const int nblocks[3], const double aspect[3]) {
+    slab_box_shrunk = false;
     if (slab_z1 < 0 || slab_margin <= 0) return;
     int a = slab_axis, c = active_block[a];
     bool low_cut = (c == slab_z0 && slab_z0 > 0), high_cut = (c == slab_z1 - 1 && slab_z1 < nblocks[a]);
     bool pos = aspect[a] > 0;
+    slab_box_shrunk = low_cut || high_cut;
     if (low_cut)  { if (pos) box.set_min(a, box.min_point()[a] + slab_margin); else box.set_max(a, box.max_point()[a] - slab_margin); }
     if (high_cut) { if (pos) box.set_max(a, box.max_point()[a] - slab_margin); else box.set_min(a, box.min_point()[a] + slab_margin); }
 }

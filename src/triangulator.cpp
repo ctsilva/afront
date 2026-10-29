@@ -557,6 +557,11 @@ void Triangulator::PrioritizeEdgeGrow(feli e1)
     if (e1->flags & FRONT_FLAG_SEED || Front::NextElement(e2)==e1) {
 		e1->priority.first = PRIORITY_GROW_SEED_EDGE | controller.GetBlockForPoint(e1->position);
 		e1->priority.second = PrioritizeEdgeGrow(*e1, *e2);
+		// 2026 (parallel slabs): seed edges are meant to grow at once, but at a cut that would let them grow through the strip
+		// that is left to the merge run; in slab mode they obey the working block like any other edge
+		extern int slab_z1;
+		if (slab_z1 >= 0 && haveWorkingBlock && !InWorkingBlock(e1, e2))
+			e1->priority.first |= PRIORITY_OWB;
     } else {
 		e1->priority.first = PRIORITY_GROW_EDGE | controller.GetBlockForPoint(e1->position);
 
@@ -1288,6 +1293,8 @@ real_type Triangulator::CosSmallestRemainingAngle(feli e1, feli e2, feli across)
 // (an ear) -- must not exist yet, or the triangle would be a second one on an existing edge (non-manifold). The vertex rings know
 // the edges created so far; after a join across slabs they also know those of the other slab (UnifyVertexRings).
 bool Triangulator::NewEdgeExists(feli e1, feli e2, feli across) const {
+	static const bool off = getenv("AFRONT_NO_NEWEDGE") != NULL;
+	if (off) return false;
 	if (across != Front::NextElement(e2) && EdgeExistsAlready(e2, across)) return true;
 	if (across != Front::PrevElement(e1) && EdgeExistsAlready(across, e1)) return true;
 	return false;
@@ -2195,6 +2202,11 @@ void Triangulator::UpdateWorkingBlock(bool first) {
 
 			Point3 sp = new_seeds[i][j];
 
+			// 2026 (parallel slabs): in a block at a cut the working box is shrunk; a seed in the strip would put vertices
+			// there (its second vertex is a step away), where the other slab's fronts will be. Reach that surface from the fronts.
+			extern bool slab_box_shrunk;
+			if (slab_box_shrunk && haveWorkingBlock && !workingBlock.contains(sp))
+				continue;
 
 			if (controller.ProjectPoint(sp, p1, n1) != PROJECT_SUCCESS)
 				continue;
@@ -2295,7 +2307,10 @@ bool Triangulator::InWorkingBlock(feli e1, feli e2) {
 
 
 	// if we've got the projection point
-	if (e1->proj_res.result == PROJECT_SUCCESS) {
+	// (2026: in slab mode a projection that ended on the domain boundary has a valid point too; testing only the end points
+	// let boundary edges grow vertices far outside the shrunk box)
+	extern int slab_z1;
+	if (e1->proj_res.result == PROJECT_SUCCESS || (slab_z1 >= 0 && e1->proj_res.result == PROJECT_BOUNDARY)) {
 		const Point3 &p  = e1->proj_res.position;
 		return (workingBlock.contains(p));
 	}
@@ -2510,6 +2525,15 @@ void Triangulator::Go
 					if (nholes++ < 50)
 						fprintf(stderr, "\n[HOLE] failsafe cannot close a front of %d edges at (%g %g %g): leaving it open (%d so far)\n", len,
 								(double)top->position[0], (double)top->position[1], (double)top->position[2], nholes);
+					if (nholes <= 10) {   // describe the front that could not be closed
+						feli e = top; int k = 0;
+						do {
+							feli ne = Front::NextElement(e), pe = Front::PrevElement(e);
+							fprintf(stderr, "    el %d v%d (%.2f %.2f %.2f) flags %d prio %08x next v%d: edge(prev,next) exists in rings: %d\n", k, e->vertindex,
+									(double)e->position[0], (double)e->position[1], (double)e->position[2], e->flags, e->priority.first, ne->vertindex, (int)EdgeExistsAlready(pe, ne));
+							e = ne; k++;
+						} while (e != top);
+					}
 					failsafe_holes.push_back(vector<int>());
 					Front *front = top->front;
 					while (!front->empty()) {

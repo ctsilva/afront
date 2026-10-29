@@ -277,6 +277,8 @@ extern char *weld_file;
 static std::unordered_map<int,int> g_id2slot;   // vertex id -> vertinfo slot, for the vertices on fronts
 
 void Triangulator::UnifyVertexRings(int keep_slot, int keep_id, int drop_slot, int drop_id) {
+	static const bool off = getenv("AFRONT_NO_UNIFY") != NULL;
+	if (off) return;
 	std::vector<int> dr = vertinfo[drop_slot].ring;
 	std::vector<int> &kr = vertinfo[keep_slot].ring;
 	for (size_t i=0; i<dr.size(); i++) {
