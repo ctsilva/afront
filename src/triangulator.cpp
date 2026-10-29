@@ -2045,6 +2045,7 @@ int sw_nswitch = 0;   // block switches so far (checkpoints are numbered by it)
 bool block_scan_always = false, block_query_verify = false;
 real_type kd_max_step_seen = 0;
 
+bool end_nn = false;   // -end_nn t: once the blocks are exhausted, start each working area at the unprocessed element nearest to the last one (spatial coherence) instead of the heap top
 int kd_audit = 0;   // -kd_audit N: every N block switches, check that the kd-trees hold exactly the front elements of the heap levels
 
 void Triangulator::KDAudit(const char *where) {
@@ -2449,7 +2450,25 @@ void Triangulator::Go
 		if (top->priority.first & PRIORITY_OWB) {
 			UpdateWorkingBlock();
 		} else if (top->priority.first & PRIORITY_OWA) {
-			UpdateWorkingArea(top);
+			if (!haveWorkingBlock) {
+				// 2026: end phase statistics (the open front is spread over the whole volume here)
+				static double t0 = get_time_seconds(); static int n0 = numFacesAdded, ncalls = 0;
+				if (++ncalls % 20000 == 0) fprintf(stderr, "\n[ENDPHASE] %d working areas, %d faces, %.0f s, heap=%zu\n", ncalls, numFacesAdded - n0, get_time_seconds() - t0, (size_t)heap.contents(1).size());
+			}
+			feli center = top;
+			if (end_nn && !haveWorkingBlock && workingAreaRadius < INFINITY) {
+				// nearest unprocessed element to the last working area, but not within half its radius (UpdateWorkingArea would make
+				// the radius infinite for those); falls back to the heap top
+				kdtree_type::OrderedTraverse ot(kdtree_g, workingAreaCenter, *this);
+				feli c; real_type d; int tried = 0;
+				while ((d = ot.next(c)) >= 0 && tried++ < 2000) {
+					if (c->priority.first & PRIORITY_FAILSAFE_ANY) continue;
+					if (!(c->priority.first & PRIORITY_OWA) || (c->priority.first & PRIORITY_OWB)) continue;
+					if (d < workingAreaRadius * 0.5) continue;
+					center = c; break;
+				}
+			}
+			UpdateWorkingArea(center);
 		} else if (top->priority.first & PRIORITY_FAILSAFE) {
 
 			if (!seen_failsafe)
