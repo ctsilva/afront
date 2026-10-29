@@ -151,6 +151,10 @@ class Front {
     static void RemoveElement(feli i);
     static feli InsertElement(feli next, FrontElement &e);
 
+    // 2026 (parallel slabs): move one element to another front's list, just before 'dest' (MoveToEnd: at the end of dst)
+    static void MoveBefore(feli dest, feli e);
+    static void MoveToEnd(Front *dst, feli e);
+
     bool empty() { return elements.empty(); }
     void verify();
 

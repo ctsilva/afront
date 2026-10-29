@@ -92,6 +92,13 @@ void OutputControllerEdgeFlipper::FinalizeVertex(int index) {
 
 void OutputControllerEdgeFlipper::AddTriangle(int index, int v1, int v2, int v3) {
 
+    {   // 2026 debugging: vertices the flipper does not know about would silently map to slot 0
+		static int nmissing = 0;
+		int ids[3] = { v1, v2, v3 };
+		for (int k=0; k<3; k++)
+			if (global_to_local_vi.find(ids[k]) == global_to_local_vi.end() && nmissing++ < 12)
+				fprintf(stderr, "[EFCHECK] AddTriangle %d: vertex id %d (%d of 3) is not in this flipper (%zu vertices known)\n", index, ids[k], k, global_to_local_vi.size());
+    }
     int til = AllocTri();
     EdgeFlipperTriangle &t = tris[til];
 
@@ -182,7 +189,7 @@ bool OutputControllerEdgeFlipper::ShouldFlip(int va, int vb, int vc, int vd) con
 												  angle(pts[0], pts[3], pts[2]))));
 
 
-    if (flipmin < curmin) {
+    if (!(flipmin >= curmin)) {   // 2026: written so that NaN angles (coincident vertices) do not flip; used to flip back and forth forever
 		return false;
     }
 
@@ -294,6 +301,7 @@ bool OutputControllerEdgeFlipper::TryFlip(int v1, int v2) {
 
 	i = verts[vs[v]].incidentVerticesGlobal.find(verts[vs[1-v]].index);
 	if (i == verts[vs[v]].incidentVerticesGlobal.end()) {
+	    { static int nn=0; if (nn++<10) fprintf(stderr, "flip: global vert not found! v=%d (id %d) other=%d (id %d) tri sets: %zu/%zu\n", vs[v], verts[vs[v]].index, vs[1-v], verts[vs[1-v]].index, verts[vs[v]].incidentVerticesLocal.size(), verts[vs[v]].incidentVerticesGlobal.size()); else if (nn==11) fprintf(stderr, "flip: (further messages are printed without ids)\n"); }
 	    cerr<<"flip: global vert not found!"<<endl;
 	} else {
 	    verts[vs[v]].incidentVerticesGlobal.erase(i);
@@ -358,7 +366,7 @@ void OutputControllerEdgeFlipper::DoEdgeFlips(const vector<int> &rv) {
 
     std::set< std::pair<int,int> > toflip;
 
-    while (1) {
+    for (int pass=0; pass<1000; pass++) {   // (2026: bounded; a bad configuration used to loop forever)
 
 	for (unsigned v=0; v<rv.size(); v++) {
 
@@ -667,6 +675,7 @@ void OutputControllerEdgeFlipper::LoadState(FILE *fp) {
 	for (long long i=0; i<n; i++) { int a, b; in.pod(a); in.pod(b); global_to_local_vi[a] = b; }
 	in.podvec(available_verts);
 	in.podvec(available_tris);
+	if (getenv("AFRONT_EFCHECK")) CheckConsistency("after LoadState");
 }
 
 // parallel slabs: append another run's flipper state (vertex ids are disjoint between slabs, local indices are shifted)
@@ -680,7 +689,7 @@ void OutputControllerEdgeFlipper::MergeState(FILE *fp) {
 		in.pod(v.boundary); in.pod(v.onfront); in.pod(v.index); in.pod(v.position); in.pod(v.normal);
 		in.ints(v.incidentTriangles); in.ints(v.incidentVerticesLocal); in.ints(v.incidentVerticesGlobal);
 		std::set<int> t, l;
-		for (std::set<int>::iterator j=v.incidentTriangles.begin(); j!=v.incidentTriangles.end(); ++j) t.insert(*j + tbase);
+		for (std::set<int>::iterator j=v.incidentTriangles.begin(); j!=v.incidentTriangles.end(); ++j) t.insert(*j >= 0 ? *j + tbase : *j - tbase);   // negative entries (-t-1) mark finished triangles
 		for (std::set<int>::iterator j=v.incidentVerticesLocal.begin(); j!=v.incidentVerticesLocal.end(); ++j) l.insert(*j + vbase);
 		v.incidentTriangles = t; v.incidentVerticesLocal = l;
 		verts.push_back(v);
@@ -698,4 +707,27 @@ void OutputControllerEdgeFlipper::MergeState(FILE *fp) {
 	in.podvec(av); in.podvec(at);
 	for (size_t i=0; i<av.size(); i++) available_verts.push_back(av[i] + vbase);
 	for (size_t i=0; i<at.size(); i++) available_tris.push_back(at[i] + tbase);
+	if (getenv("AFRONT_EFCHECK")) CheckConsistency("after MergeState");
+}
+
+void OutputControllerEdgeFlipper::CheckConsistency(const char *where) const {
+	std::set<int> freet(available_tris.begin(), available_tris.end()), freev(available_verts.begin(), available_verts.end());
+	int bad = 0, ntri = 0;
+	for (size_t t=0; t<tris.size(); t++) {
+		if (freet.count((int)t)) continue;
+		ntri++;
+		for (int k=0; k<3; k++) {
+			int v = tris[t].vi[k];
+			if (v < 0 || v >= (int)verts.size() || freev.count(v)) { if (bad++ < 5) fprintf(stderr, "[EFCHECK] %s: tri %zu uses free/invalid vertex slot %d\n", where, t, v); continue; }
+			if (!verts[v].incidentTriangles.count((int)t)) { if (bad++ < 5) fprintf(stderr, "[EFCHECK] %s: vertex slot %d (id %d) lacks incident triangle %zu\n", where, v, verts[v].index, t); }
+			int w = tris[t].vi[(k+1)%3];
+			if (w >= 0 && w < (int)verts.size() && !verts[v].incidentVerticesLocal.count(w)) { if (bad++ < 5) fprintf(stderr, "[EFCHECK] %s: vertex slot %d lacks neighbor slot %d (tri %zu)\n", where, v, w, t); }
+		}
+	}
+	for (size_t v=0; v<verts.size(); v++) {
+		if (freev.count((int)v)) continue;
+		for (std::set<int>::const_iterator i=verts[v].incidentTriangles.begin(); i!=verts[v].incidentTriangles.end(); ++i)
+			if (*i < 0 || *i >= (int)tris.size() || freet.count(*i)) { if (bad++ < 5) fprintf(stderr, "[EFCHECK] %s: vertex slot %zu lists free/invalid triangle %d\n", where, v, *i); }
+	}
+	fprintf(stderr, "[EFCHECK] %s: %zu vertex slots, %d triangles, %d problems\n", where, verts.size(), ntri, bad);
 }

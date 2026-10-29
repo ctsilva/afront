@@ -355,6 +355,7 @@ int proj_dup_waits = 0;    // result already set by an earlier work item while a
 int proj_prev_waits = 0;   // the previous edge still had a work item that reads the element being removed
 
 void Triangulator::WaitForProjection(feli e) {
+    if (e->flags & FRONT_FLAG_CONNECTOR) return;   // 2026: connectors are never projected (their result is never set)
     // wait for every queued or running work item for e, not just the first one to set result
     if (e->proj_res.result != PROJECT_INCOMPLETE && e->proj_res.pending > 0)
 		__sync_fetch_and_add(&proj_dup_waits, 1);

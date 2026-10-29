@@ -90,7 +90,7 @@ char *gf_prefix = NULL;
 // 2026: checkpoint/restart (checkpoint.cpp)
 char *checkpoint_dir = NULL, *resume_from = NULL;
 // 2026: parallel slabs (see PLAN.md): phase 1 runs restrict the volume to block layers [slab_z0,slab_z1) and save their end state
-char *slab_save = NULL, *merge_states = NULL;
+char *slab_save = NULL, *merge_states = NULL, *weld_file = NULL;
 int vertex_offset = 0, face_offset = 0;
 extern int slab_z0, slab_z1;
 int checkpoint_every = 0, checkpoint_keep = 0, checkpoint_keep_every = 0;
@@ -3429,6 +3429,7 @@ int main(int argc, char* argv[]) {
     CL_ADD_VAR(cl,slab_z1,            ": parallel slabs: one past the last block layer of this run (-1 = whole volume)");
     CL_ADD_VAR(cl,slab_save,          ": parallel slabs: save the end state (front elements waiting for other slabs) to this file when the slab's blocks are done");
     CL_ADD_VAR(cl,merge_states,       ": parallel slabs, phase 2: comma-separated end-state files to merge; triangulation continues without the block gate");
+    CL_ADD_VAR(cl,weld_file,          ": parallel slabs, phase 2: append \"id1 id2\" pairs of duplicate vertices (same point on two slabs) to this file");
     CL_ADD_VAR(cl,vertex_offset,      ": first vertex id to use (disjoint id ranges for parallel slabs)");
     CL_ADD_VAR(cl,face_offset,        ": first face id to use (disjoint id ranges for parallel slabs)");
     CL_ADD_VAR(cl,resume_from,        ": continue triangulating from this checkpoint file (same volume, -outname, rho, max_step, -reuse_guidance t -reuse_seeds t)");

@@ -106,6 +106,8 @@ void Triangulator::SaveCheckpoint(const char *path) {
 extern int vertex_offset, face_offset;
 static std::vector<Triangulator::feli> g_merge_elems;      // parallel slabs: elements collected from all merged states
 static std::vector<Triangulator::feli> g_merge_unprojected;
+static std::vector<int> g_merge_conn_state;   // for each boundary connector: index of the state file it came from
+static int g_merge_state = 0;
 
 // merge=false: restore the state of a checkpoint into a fresh Triangulator.
 // merge=true (parallel slabs, phase 2): append the end state of another slab run; the working-block gate is switched off
@@ -148,6 +150,7 @@ void Triangulator::LoadCheckpointImpl(const char *path, bool merge) {
 		if (!merge) boundary_connectors.clear();
 		boundary_connectors.resize(merge ? base + n : n);
 		for (long long i=0; i<n; i++) { int x; in.pod(x); boundary_connectors[(merge ? base : 0) + i] = elems.at(x); }
+		if (merge) for (long long i=0; i<n; i++) g_merge_conn_state.push_back(g_merge_state);
 	}
 	{
 		long long n = in.i64();
@@ -211,7 +214,7 @@ void Triangulator::MergeCheckpoints(const char *list) {
 	while (pos <= all.size()) {
 		size_t c = all.find(',', pos);
 		std::string one = all.substr(pos, c == std::string::npos ? std::string::npos : c - pos);
-		if (!one.empty()) LoadCheckpointImpl(one.c_str(), true);
+		if (!one.empty()) { LoadCheckpointImpl(one.c_str(), true); g_merge_state++; }
 		if (c == std::string::npos) break;
 		pos = c + 1;
 	}
@@ -222,6 +225,7 @@ void Triangulator::MergeCheckpoints(const char *list) {
 	workingAreaCenter = g_merge_elems.empty() ? Point3(0,0,0) : g_merge_elems[0]->position;
 	KDRebuildFromHeap();
 	for (size_t i=0; i<g_merge_unprojected.size(); i++) RequestProjection(g_merge_unprojected[i]);
+	if (!getenv("AFRONT_NO_STITCH")) StitchConnectors(g_merge_conn_state);
 	fprintf(stderr, "\n[CHECKPOINT] merged %zu front elements (%zu fronts); new vertices start at %d, faces at %d\n",
 			g_merge_elems.size(), fronts.size(), vertex_offset, face_offset);
 }
@@ -251,4 +255,129 @@ void Triangulator::MaybeCheckpoint() {
 			unlink(path);
 		}
 	}
+}
+
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Parallel slabs, phase 2: a boundary curve on the volume's outer faces that crosses the cut between two slabs ends in a
+// connector (pseudo-edge c, positioned at the end of the curve's piece) in one slab, and starts at the same point in the other
+// slab (q0 = the element after that slab's connector d). In a sequential run the second piece would be joined to the first
+// one's connector by InsertBoundary; here we splice the two fronts at that point:
+//      before:  F_a: ... u c | a ...          F_b: ... d | q0 q1 ...        (| = chord edges c->a and d->q0)
+//      after :  ... u c q1 ... d a ...        (c becomes a real growing edge, d keeps its chord, now to a)
+// If both belong to the same front, the splice cuts it in two: [a .. d] closed by d's chord, and [q1 .. u c].
+// The vertex at the junction exists twice (c's and q0's); q0 is removed from the front and the pair is written to the
+// -weld_file so that the driver can merge the two vertices in the final mesh.
+extern char *weld_file;
+
+void Triangulator::JoinConnectors(feli c, feli d) {
+	feli a = Front::NextElement(c), q0 = Front::NextElement(d), q1 = Front::NextElement(q0);
+	Front *fa = c->front, *fb = d->front;
+	int c_vert = c->vertindex, q0_vert = q0->vertindex;
+
+	KDRemove(c);
+	KDRemove(d);
+
+	if (fa != fb) {
+		std::vector<feli> seg;                      // q1 .. d in cycle order of F_b
+		for (feli e = q1; ; e = Front::NextElement(e)) { seg.push_back(e); if (e == d) break; }
+		for (size_t i=0; i<seg.size(); i++) Front::MoveBefore(a, seg[i]);
+	} else {
+		std::vector<feli> seg;                      // a .. d
+		for (feli e = a; ; e = Front::NextElement(e)) { seg.push_back(e); if (e == d) break; }
+		Front *nf = new Front();
+		for (size_t i=0; i<seg.size(); i++) Front::MoveToEnd(nf, seg[i]);
+		fronts.push_back(nf);
+	}
+
+	// q0 is now alone (different fronts) or sits between c and q1 (same front): drop it; its vertex stays in the mesh
+	// (RemoveFrontElement finalizes it) and is welded to c's vertex by the driver
+	RemoveFrontElement(q0);
+
+	// c is a real growing edge from now on, like the connector that InsertBoundary converts
+	c->flags = FRONT_FLAG_FEATURE | FRONT_FLAG_SEED | FRONT_FLAG_EDGEGROW;
+	c->priority.first = PRIORITY_GROW_EDGE | controller.GetBlockForPoint(c->position);
+	c->priority.second = 1e34;
+	heap.update_position(c->heap_position);
+	KDInsert(c);
+	KDInsert(d);
+	RequestProjection(c);
+	PrioritizeEdgeGrow(c);
+	AddNeighborsToRings(*c, *Front::NextElement(c));
+
+	if (weld_file) {
+		if (FILE *wf = fopen(weld_file, "a")) { fprintf(wf, "%d %d\n", c_vert, q0_vert); fclose(wf); }
+	}
+}
+
+// A piece whose chord has zero length (its end point is its own start point, after joins across slabs) is a closed loop:
+// drop the chord element c; the edge before it now ends at the start vertex a (c's vertex is a duplicate of a's: welded).
+void Triangulator::CloseConnectorLoop(feli c) {
+	feli a = Front::NextElement(c), u = Front::PrevElement(c);
+	int c_vert = c->vertindex, a_vert = a->vertindex;
+	KDRemove(u);
+	RemoveFrontElement(c);      // also forgets c in boundary_connectors (no blocks left)
+	KDInsert(u);
+	RequestProjection(u);
+	PrioritizeEdgeGrow(u);
+	AddNeighborsToRings(*u, *a);
+	extern char *weld_file;
+	if (weld_file) {
+		if (FILE *wf = fopen(weld_file, "a")) { fprintf(wf, "%d %d\n", a_vert, c_vert); fclose(wf); }
+	}
+}
+
+void Triangulator::StitchConnectors(const std::vector<int> &state_of_in) {
+	std::vector<int> state_of = state_of_in;
+	if (getenv("AFRONT_DEBUG_STITCH"))
+		for (size_t i=0; i<boundary_connectors.size(); i++) {
+			feli c = boundary_connectors[i]; feli q0 = Front::NextElement(c);
+			fprintf(stderr, "[STITCH] connector %zu (state %d): end (%.6f %.6f %.6f) start (%.6f %.6f %.6f)\n", i, state_of[i],
+					(double)c->position[0], (double)c->position[1], (double)c->position[2], (double)q0->position[0], (double)q0->position[1], (double)q0->position[2]);
+		}
+	int njoined = 0, nclosed = 0;
+	bool again = true;
+	while (again) {
+		again = false;
+		for (size_t i=0; i<boundary_connectors.size() && !again; i++) {
+			feli c = boundary_connectors[i];
+			{
+				feli a0 = Front::NextElement(c);
+				if (a0 != c && Front::PrevElement(c) != a0 && !(a0->flags & FRONT_FLAG_CONNECTOR) &&
+					Point3::distance(c->position, a0->position) <= 1e-6 && c->normal.dot(a0->normal) > 0.5) {
+					CloseConnectorLoop(c);      // removes c from boundary_connectors
+					state_of.erase(state_of.begin() + i);
+					nclosed++;
+					again = true;
+					break;
+				}
+			}
+			for (size_t j=0; j<boundary_connectors.size(); j++) {
+				if (i == j) continue;   // (pairs from the same state can be legitimate: after a join, the chord of a piece points at the start of another state's piece)
+				feli d = boundary_connectors[j];
+				feli q0 = Front::NextElement(d);
+				if (q0->flags & FRONT_FLAG_CONNECTOR) continue;
+				if (Point3::distance(c->position, q0->position) > 1e-6 || c->normal.dot(q0->normal) <= 0.5) continue;
+				JoinConnectors(c, d);
+				boundary_connectors.erase(boundary_connectors.begin() + i);
+				state_of.erase(state_of.begin() + i);
+				njoined++;
+				again = true;
+				break;
+			}
+		}
+	}
+	for (size_t i=0; i<boundary_connectors.size(); i++) {   // why are these unmatched? nearest start point of another state's piece
+		feli c = boundary_connectors[i];
+		real_type best = 1e30; real_type bdot = 0; int bj = -1;
+		for (size_t j=0; j<boundary_connectors.size(); j++) {
+			if (i == j) continue;
+			feli q0 = Front::NextElement(boundary_connectors[j]);
+			real_type dist = Point3::distance(c->position, q0->position);
+			if (dist < best) { best = dist; bdot = c->normal.dot(q0->normal); bj = (int)j; }
+		}
+		fprintf(stderr, "[STITCH]   unmatched connector (state %d) at (%g %g %g): nearest other piece start %.3g away (normal dot %.2f, state %d)\n",
+				state_of[i], (double)c->position[0], (double)c->position[1], (double)c->position[2], (double)best, (double)bdot, bj >= 0 ? state_of[bj] : -1);
+	}
+	fprintf(stderr, "\n[STITCH] joined %d connector pairs between the merged states, closed %d loops; %zu connectors left unmatched\n", njoined, nclosed, boundary_connectors.size());
 }

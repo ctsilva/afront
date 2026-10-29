@@ -235,3 +235,16 @@ void Front::verify() {
 
 }
 
+
+
+void Front::MoveBefore(feli dest, feli e) {
+    Front *src = e->front, *dst = dest->front;
+    dst->elements.splice(dest, src->elements, e);
+    e->front = dst;
+}
+
+void Front::MoveToEnd(Front *dst, feli e) {
+    Front *src = e->front;
+    dst->elements.splice(dst->elements.end(), src->elements, e);
+    e->front = dst;
+}

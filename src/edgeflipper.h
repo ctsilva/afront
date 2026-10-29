@@ -75,6 +75,7 @@ public:
     void SaveState(FILE *f) const;
     void LoadState(FILE *f);
     void MergeState(FILE *f);
+    void CheckConsistency(const char *where) const;   // debugging: incident sets vs. triangles
 
 protected:
 

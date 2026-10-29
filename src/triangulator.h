@@ -310,6 +310,9 @@ class Triangulator {
     void LoadCheckpoint(const char *path);
     void LoadCheckpointImpl(const char *path, bool merge);
     void MergeCheckpoints(const char *comma_separated_paths);   // parallel slabs, phase 2
+    void StitchConnectors(const std::vector<int> &state_of);   // parallel slabs: join the boundary pieces of different slab states
+    void JoinConnectors(feli c, feli d);
+    void CloseConnectorLoop(feli c);
     void MaybeCheckpoint();
     void KDRebuildFromHeap();
     void KDAudit(const char *where);   // 2026: -kd_audit N: compare the kd-trees with the heap levels
