@@ -32,6 +32,12 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
 #include "triangulator.h"
 
 #include <sys/time.h>
+#include <unordered_map>
+#include <map>
+// 2026 diagnostics: why was the last TriangleLegal() false (source line), and why did each element end up in FAILSAFE
+static thread_local int tl_reason = 0;
+static std::map<int,int> failsafe_why;            // reason (line of the rejecting check; negative = projection failure/other) -> elements demoted
+static std::unordered_map<int,int> lastgrowfail;   // vertindex -> reason of the last failed grow attempt
 static double get_time_seconds() {   // [TIMING] helper (2025 revival)
     struct timeval tv;
     gettimeofday(&tv, NULL);
@@ -603,6 +609,7 @@ void Triangulator::PrioritizeEdgeConnect(feli e1)
 
     feli across;
     if (!GetConnection(e1, across)) {
+		if (!(e1->priority.first & PRIORITY_FAILSAFE_ANY)) { auto it = lastgrowfail.find(e1->vertindex); failsafe_why[it == lastgrowfail.end() ? 0 : it->second]++; }
 		PrioritizeEdgeFailsafe(e1);
 		return;
     }
@@ -942,7 +949,7 @@ bool Triangulator::TriangleLegal(const feli e1, const feli e2, const feli *acros
 
     // don't make degenerate triangles
     if (across && (e1->vertindex==(*across)->vertindex || e2->vertindex==(*across)->vertindex))
-		return false;
+		{ tl_reason = __LINE__; return false; }
 
 
     // if we've got a 2 vertex front, it's always legal to put down a new vert
@@ -962,13 +969,13 @@ bool Triangulator::TriangleLegal(const feli e1, const feli e2, const feli *acros
     // check that the tri's normal jives with the vertex normals
     for (int i=0; i<3; i++) {
 		if (fnorm.dot(trin[i]) < norm_thresh)
-			return false;
+			{ tl_reason = __LINE__; return false; }
     }
 
 	if (across) {
 		if ((*across)->normal.dot(e1->normal) < norm_thresh ||
 			(*across)->normal.dot(e2->normal) < norm_thresh) {
-			return false;
+			{ tl_reason = __LINE__; return false; }
 		}
 	}
 
@@ -979,7 +986,7 @@ bool Triangulator::TriangleLegal(const feli e1, const feli e2, const feli *acros
 
 		// we're growing from this edge - make sure we're growing the correct direction
 		if (!GrowthFromEdgeLegal(*tri[i], trip[(i+2)%3]))
-			return false;
+			{ tl_reason = __LINE__; return false; }
     }
 
     // make sure we're in the correct sector
@@ -988,12 +995,12 @@ bool Triangulator::TriangleLegal(const feli e1, const feli e2, const feli *acros
 
 		if (!tri[(i+1)%3] || *tri[(i+1)%3] != Front::NextElement(*tri[i])) {
 			if (!InLegalFenceCorner(*tri[i], trip[(i+1)%3]))
-				return false;
+				{ tl_reason = __LINE__; return false; }
 		}
 
 		if (!tri[(i+2)%3] || *tri[(i+2)%3] != Front::PrevElement(*tri[i])) {
 			if (!InLegalFenceCorner(*tri[i], trip[(i+2)%3]))
-				return false;
+				{ tl_reason = __LINE__; return false; }
 		}
     }
 
@@ -1046,7 +1053,7 @@ bool Triangulator::TriangleLegal(const feli e1, const feli e2, const feli *acros
 									  PointSegmentDistance(trip[(i+j)%3], trip[i], nbrs[j-1]->position));
 
 			if (dist < mbuffer_size) {
-				return false;
+				{ tl_reason = __LINE__; return false; }
 			}
 
 			if (isclose && dist < buffer_size) {
@@ -1091,7 +1098,7 @@ bool Triangulator::TriangleLegal(const feli e1, const feli e2, const feli *acros
 
 		if (existing) {
 			cerr<<"projected to already existing point!"<<endl;
-			return false;
+			{ tl_reason = __LINE__; return false; }
 			BREAK;
 		}
 
@@ -1122,7 +1129,7 @@ bool Triangulator::TriangleLegal(const feli e1, const feli e2, const feli *acros
 				dist = std::min(dist, DistanceToFence(trip[new_edges[j]], trip[(new_edges[j]+1)%3], trin[new_edges[j]], trin[(new_edges[j]+1)%3], pin->position));
 
 			if (dist < mbuffer_size) {
-				return false;
+				{ tl_reason = __LINE__; return false; }
 			}
 
 			if (isclose && dist < buffer_size) {
@@ -1133,7 +1140,7 @@ bool Triangulator::TriangleLegal(const feli e1, const feli e2, const feli *acros
 				dist = PointSegmentDistance(across_p, pi->position, pin->position);
 
 				if (dist < mbuffer_size) {
-					return false;
+					{ tl_reason = __LINE__; return false; }
 				}
 
 				if (isclose && dist < buffer_size) {
@@ -1145,9 +1152,9 @@ bool Triangulator::TriangleLegal(const feli e1, const feli e2, const feli *acros
 
 
 		if (IntersectsFence(pi, e1->position, across_p))
-			return false;
+			{ tl_reason = __LINE__; return false; }
 		if (IntersectsFence(pi, e2->position, across_p))
-			return false;
+			{ tl_reason = __LINE__; return false; }
 
     }
 
@@ -2438,6 +2445,7 @@ void Triangulator::Go
 			if (!haveWorkingBlock) {
 				if (merge_audit && AuditDeferredSeeds()) continue;   // 2026: parallel slabs: components nobody covered
 				fprintf(stderr, "\n[ENDRUN] faces=%d loops=%zu\n", numFacesAdded, fronts.size());
+				for (auto &kv : failsafe_why) fprintf(stderr, "[FAILSAFEWHY] reason=%d count=%d\n", kv.first, kv.second);
 				break;
 			}
 			UpdateWorkingBlock();
@@ -2456,6 +2464,7 @@ void Triangulator::Go
 				static double t0 = get_time_seconds(); static int n0 = numFacesAdded, ncalls = 0;
 				static bool announced = false;
 				if (!announced) { announced = true; fprintf(stderr, "\n[SWEEPEND] faces=%d loops=%zu heap_l=%d heap_g=%d\n", numFacesAdded, fronts.size(), (int)heap.contents(0).size(), (int)heap.contents(1).size());
+				for (auto &kv : failsafe_why) fprintf(stderr, "[FAILSAFEWHY-SWEEP] reason=%d count=%d\n", kv.first, kv.second);
 				if (const char *fd = getenv("AFRONT_FRONTDUMP")) {   // 2026: front at the end of the sweep (test harness): one line per element
 					if (FILE *ff = fopen(fd, "w")) {
 						std::map<Front*, int> loopid;
@@ -2627,6 +2636,7 @@ void Triangulator::Go
 
 
 			if (top->proj_res.result == PROJECT_FAILURE) {
+				lastgrowfail[top->vertindex] = -1;
 				PrioritizeEdgeConnect(top);
 				continue;
 			}
@@ -2668,6 +2678,7 @@ void Triangulator::Go
 				if (tl && !isclose) {
 					ConnectTriangle(top, across, failsafe);
 				} else {
+					lastgrowfail[top->vertindex] = tl ? -2 : 100000 + tl_reason;   // snapped: isclose (-2) or the illegal-triangle line
 					PrioritizeEdgeConnect(top);
 				}
 
@@ -2679,6 +2690,7 @@ void Triangulator::Go
 					if (top->proj_res.result == PROJECT_BOUNDARY)
 						Front::NextElement(top)->flags |= FRONT_FLAG_BOUNDARY;
 				} else {
+					lastgrowfail[top->vertindex] = tl ? -3 : tl_reason;             // grow: isclose (-3) or the illegal-triangle line
 					PrioritizeEdgeConnect(top);
 				}
 			}

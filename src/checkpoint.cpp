@@ -214,6 +214,17 @@ void Triangulator::LoadCheckpointImpl(const char *path, bool merge) {
 	for (size_t i=0; i<elems.size(); i++)
 		if (!(elems[i]->flags & FRONT_FLAG_CONNECTOR) && elems[i]->proj_res.result == PROJECT_INCOMPLETE) { RequestProjection(elems[i]); nreq++; }
 
+	if (const char *fd = getenv("AFRONT_FRONTDUMP_LOAD")) {   // 2026 diagnostics: the front as loaded, same format as AFRONT_FRONTDUMP
+		if (FILE *ff = fopen(fd, "w")) {
+			std::map<Front*, int> loopid;
+			for (feli e : elems) {
+				if (!loopid.count(e->front)) { int n = (int)loopid.size(); loopid[e->front] = n; }
+				feli nx = Front::NextElement(e);
+				fprintf(ff, "%d %d %d %.5f %.5f %.5f %08x %.6g %d %d %.5g\n", loopid[e->front], e->vertindex, nx->vertindex, (double)e->position[0], (double)e->position[1], (double)e->position[2], e->priority.first, (double)e->priority.second, e->flags, 1, (double)e->max_step);
+			}
+			fclose(ff);
+		}
+	}
 	if (const char *rs = getenv("AFRONT_CKPT_RESAVE")) SaveCheckpoint(rs);   // debugging: save/load round-trip test
 	fprintf(stderr, "\n[CHECKPOINT] resumed from %s: switch %d, %zu front elements in %zu fronts, %d verts %d faces, active block %d, %lld projections re-requested\n",
 			path, sw_nswitch, elems.size(), fronts.size(), numVertsAdded, numFacesAdded, ab, nreq);
