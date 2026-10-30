@@ -2455,7 +2455,19 @@ void Triangulator::Go
 				// 2026: end phase statistics (the open front is spread over the whole volume here)
 				static double t0 = get_time_seconds(); static int n0 = numFacesAdded, ncalls = 0;
 				static bool announced = false;
-				if (!announced) { announced = true; fprintf(stderr, "\n[SWEEPEND] faces=%d loops=%zu heap_l=%d heap_g=%d\n", numFacesAdded, fronts.size(), (int)heap.contents(0).size(), (int)heap.contents(1).size()); }
+				if (!announced) { announced = true; fprintf(stderr, "\n[SWEEPEND] faces=%d loops=%zu heap_l=%d heap_g=%d\n", numFacesAdded, fronts.size(), (int)heap.contents(0).size(), (int)heap.contents(1).size());
+				if (const char *fd = getenv("AFRONT_FRONTDUMP")) {   // 2026: front at the end of the sweep (test harness): one line per element
+					if (FILE *ff = fopen(fd, "w")) {
+						std::map<Front*, int> loopid;
+						for (int h = 0; h < 2; h++) for (feli e : heap.contents(h)) {
+							if (!loopid.count(e->front)) { int n = (int)loopid.size(); loopid[e->front] = n; }
+							feli nx = Front::NextElement(e);
+							fprintf(ff, "%d %d %d %.5f %.5f %.5f %08x %.6g %d %d %.5g\n", loopid[e->front], e->vertindex, nx->vertindex, (double)e->position[0], (double)e->position[1], (double)e->position[2], e->priority.first, (double)e->priority.second, e->flags, h, (double)e->max_step);
+						}
+						fclose(ff);
+					}
+				}
+				}
 				if (++ncalls % 20000 == 0) fprintf(stderr, "\n[ENDPHASE] %d working areas, %d faces, %.0f s, heap=%zu\n", ncalls, numFacesAdded - n0, get_time_seconds() - t0, (size_t)heap.contents(1).size());
 			}
 			feli center = top;
