@@ -2437,6 +2437,7 @@ void Triangulator::Go
 			// stop if we have no more working blocks
 			if (!haveWorkingBlock) {
 				if (merge_audit && AuditDeferredSeeds()) continue;   // 2026: parallel slabs: components nobody covered
+				fprintf(stderr, "\n[ENDRUN] faces=%d loops=%zu\n", numFacesAdded, fronts.size());
 				break;
 			}
 			UpdateWorkingBlock();
@@ -2453,6 +2454,8 @@ void Triangulator::Go
 			if (!haveWorkingBlock) {
 				// 2026: end phase statistics (the open front is spread over the whole volume here)
 				static double t0 = get_time_seconds(); static int n0 = numFacesAdded, ncalls = 0;
+				static bool announced = false;
+				if (!announced) { announced = true; fprintf(stderr, "\n[SWEEPEND] faces=%d loops=%zu heap_l=%d heap_g=%d\n", numFacesAdded, fronts.size(), (int)heap.contents(0).size(), (int)heap.contents(1).size()); }
 				if (++ncalls % 20000 == 0) fprintf(stderr, "\n[ENDPHASE] %d working areas, %d faces, %.0f s, heap=%zu\n", ncalls, numFacesAdded - n0, get_time_seconds() - t0, (size_t)heap.contents(1).size());
 			}
 			feli center = top;
